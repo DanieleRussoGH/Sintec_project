@@ -1,21 +1,19 @@
 #%% User: danru
+import os
+import warnings
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import scipy.fft 
-import MIMICUtil as ut
-import warnings
 from scipy import stats
-import heartpy as hp
-
-from sklearn.preprocessing import StandardScaler
-# from sklearn.model_selection import train_test_split, GridSearchCV
-# from sklearn.metrics import mean_squared_error, mean_absolute_error
-# from sklearn.linear_model import Ridge
-# from sklearn import svm
 from pprint import pprint
+import matplotlib.pyplot as plt
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import GridSearchCV, RepeatedKFold
 warnings.simplefilter("ignore")
-from filterpy.kalman import KalmanFilter
+# import scipy.fft 
+# import MIMICUtil as ut
+# import heartpy as hp
+# from sklearn.preprocessing import StandardScaler
+# from filterpy.kalman import KalmanFilter
 
 class DataRegressor(object):
 	"""docstring for DataReader"""
@@ -31,6 +29,10 @@ class DataRegressor(object):
 		self.plot = False	
 		self.savefile = True
 		np.random.seed(self.RS) 
+
+	def create_path(self, path):
+		if not os.path.exists(path):
+			os.makedirs(path)
 
 	def setup(self):
 		# with open("Folder\\config.txt") as file:
@@ -78,6 +80,10 @@ class DataRegressor(object):
 
 		with open("Folder\\patients.txt") as file:
 			self.patients = file.readlines()
+
+		self.create_path("Dataset")
+		self.create_path("Plots")
+		# exit()
 
 	def interpolation(self):
 		for e in ['PLETH','II','ABP']:
@@ -151,7 +157,19 @@ class DataRegressor(object):
 
 	def SBP_DBP_values(self):
 		ppg,ecg,abp = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
+		pat_dict = {}
+		"""
+		pat_dict = {
+			'3002511':{
+				'1':{
+					'PTT':[],
+					'HR':[],
+					'DBP':[],
+					'SBP':[]
+					}
+				}
+		}
+		"""
 		for x,y in zip([ppg,ecg,abp],['PLETH','II','ABP']):
 			df = pd.read_csv(f'Dataset\\Interpolate{y}.csv').set_index('Unnamed: 0')
 			if y.startswith('P'):
@@ -163,11 +181,20 @@ class DataRegressor(object):
 		# index = list(ppg.index)
 		# Find length of cardiac cycle 
 		# wind_len = ut.findCC(ecg_int,self.WindLenDefault,self.WindStdCoef,patient)
+		
+		# iter_lst = ppg.columns[:4]
+		iter_lst = ppg.columns
 
-		for col in ppg.columns:
+		for col in iter_lst:
 			print(f'******************** Batch: {col} ********************')
 			filt = True
-			# filt = '3100038' in col
+			patient, batch = col.split('_')
+			# filt = '3002511_12' in col
+			try:
+				temporary = pat_dict[patient]
+			except:
+				pat_dict.update({patient:{}})
+
 			if filt:
 				print('Number of NaNs:')
 				print(f'ECG: {ecg[col].isna().sum()}')
@@ -191,57 +218,77 @@ class DataRegressor(object):
 					DBPs,_ = scipy.signal.find_peaks(-ABP,prominence=.5,distance=60,width=10)
 					SBPs,_ = scipy.signal.find_peaks(ABP,prominence=.5,distance=60,width=10)
 
-					DBPs_f, SBPs_f = self.cleanWindDSBP(DBPs, SBPs)
-					Rs_f, SPs_f = self.cleanWindRSP(Rs, SPs)
-					print('Rs:',np.array(Rs))
-					print('SPs:',np.array(SPs))
-					print('DBPs:',np.array(DBPs))
-					print('SBPs:',np.array(SBPs))
+					if len(DBPs) != 0 and len(SBPs)!= 0 and len(Rs) != 0 and len(SPs) != 0:
+						DBPs_f, SBPs_f = self.cleanWindDSBP(DBPs, SBPs)
+						Rs_f, SPs_f = self.cleanWindRSP(Rs, SPs)
+						pat_dict[patient].update({batch:{}})
+						# print('Rs:',np.array(Rs))
+						# print('SPs:',np.array(SPs))
+						# print('DBPs:',np.array(DBPs))
+						# print('SBPs:',np.array(SBPs))
 
-					x_R = [index[x] for x in Rs]
-					x_R_f = [index[x] for x in Rs_f]
+						x_R = [index[x] for x in Rs]
+						x_R_f = [index[x] for x in Rs_f]
 
-					x_SP = [index[x] for x in SPs]
-					x_SP_f = [index[x] for x in SPs_f]
+						x_SP = [index[x] for x in SPs]
+						x_SP_f = [index[x] for x in SPs_f]
 
-					x_SBP = [index[x] for x in SBPs]
-					x_SBP_f = [index[x] for x in SBPs_f]
+						x_SBP = [index[x] for x in SBPs]
+						x_SBP_f = [index[x] for x in SBPs_f]
 
-					x_DBP = [index[x] for x in DBPs]
-					x_DBP_f = [index[x] for x in DBPs_f]
+						x_DBP = [index[x] for x in DBPs]
+						x_DBP_f = [index[x] for x in DBPs_f]
 
-					fig, axs = plt.subplots(3,1,sharex=True) 
-					fig.set_size_inches((16,9))
-					fig.suptitle(col)
-					axs[0].plot(index,ecg_filt)
-					axs[0].set_ylabel('ECG [mV]')
-					axs[0].scatter(x_R, ecg_filt[Rs],color='red',label='R peak') 
-					axs[0].scatter(x_R_f, ecg_filt[Rs_f],color='yellow',label='R peak') 
-					# axs[0].legend('lower right')
+						fig, axs = plt.subplots(3,1,sharex=True) 
+						fig.set_size_inches((16,9))
+						fig.suptitle(col)
+						axs[0].plot(index,ecg_filt)
+						axs[0].set_ylabel('ECG [mV]')
+						axs[0].scatter(x_R, ecg_filt[Rs],color='red',label='R peak') 
+						axs[0].scatter(x_R_f, ecg_filt[Rs_f],color='yellow',label='R peak') 
+						# axs[0].legend('lower right')
 
-					axs[1].plot(index,ppg_filt)
-					axs[1].set_ylabel('PPG [mV]')
-					axs[1].scatter(x_SP,ppg_filt[SPs],color='red',label='S peak') 
-					axs[1].scatter(x_SP_f,ppg_filt[SPs_f],color='yellow',label='S peak') 
+						axs[1].plot(index,ppg_filt)
+						axs[1].set_ylabel('PPG [mV]')
+						axs[1].scatter(x_SP,ppg_filt[SPs],color='red',label='S peak') 
+						axs[1].scatter(x_SP_f,ppg_filt[SPs_f],color='yellow',label='S peak') 
 
-					axs[2].set_ylabel('ABP [mmHg]')
-					axs[2].set_xlabel('Time [s]')
-					try:
-						axs[2].plot(index,ABP)
-						axs[2].scatter(x_DBP,ABP[DBPs],color='red',label='DBP')
-						axs[2].scatter(x_DBP_f,ABP[DBPs_f],color='yellow',label='DBP_f')
+						axs[2].set_ylabel('ABP [mmHg]')
+						axs[2].set_xlabel('Time [s]')
+						try:
+							axs[2].plot(index,ABP)
+							axs[2].scatter(x_DBP,ABP[DBPs],color='red',label='DBP')
+							axs[2].scatter(x_DBP_f,ABP[DBPs_f],color='yellow',label='DBP_f')
 
-						axs[2].scatter(x_SBP,ABP[SBPs],color='green',label='SBP')
-						axs[2].scatter(x_SBP_f,ABP[SBPs_f],color='blue',label='SBP_f')
-					except ValueError:
-						pass
+							axs[2].scatter(x_SBP,ABP[SBPs],color='green',label='SBP')
+							axs[2].scatter(x_SBP_f,ABP[SBPs_f],color='blue',label='SBP_f')
+						except ValueError:
+							pass
 
-					plt.tight_layout()
-					# plt.show()
-					plt.savefig(f'Plots\\Batches\\{col}.png')
-				
-					Mptt,Mhr,Msbp,Mdbp,Mmap = self.find_ptt(SBPs_f, DBPs_f, x_SBP, x_DBP, Rs_f, SPs_f,
-														index, ABP, ecg_filt, ppg_filt, col)
+						plt.tight_layout()
+						# plt.show()
+						if self.savefile:
+							plt.savefig(f'Plots\\Batches\\{col}.png')
+					
+						Mptt,Mhr,Msbp,Mdbp,Mmap = self.find_ptt(SBPs_f, DBPs_f, x_SBP, x_DBP, Rs_f, SPs_f,
+															index, ABP, ecg_filt, ppg_filt, col)
+
+						pat_dict[patient][batch].update({'PTT':Mptt})
+						pat_dict[patient][batch].update({'HR':Mhr})
+						pat_dict[patient][batch].update({'SBP':Msbp})
+						pat_dict[patient][batch].update({'DBP':Mdbp})
+		
+		for patient in pat_dict.keys():
+			PTT,HR,SBP,DBP = [], [], [], []
+			batches = pat_dict[patient].keys()
+			[PTT.extend(pat_dict[patient][x]['PTT']) for x in batches]
+			[HR.extend(pat_dict[patient][x]['HR']) for x in batches]
+			[SBP.extend(pat_dict[patient][x]['SBP']) for x in batches]
+			[DBP.extend(pat_dict[patient][x]['DBP']) for x in batches]
+
+			DF = pd.DataFrame({'PTT':PTT,'HR':HR,'SBP':SBP,'DBP':DBP})
+			self.create_path("Dataset\\Patients")
+			DF.to_csv('Dataset\\Patients\\'+patient+'.csv')
 
 				# print(ecg_filt)
 				# print(ppg_filt)
@@ -282,6 +329,53 @@ class DataRegressor(object):
 					# end_win+=win_len
 					# if end_win == len(ecg_filt):
 					# 	condition = False
+
+	def BP_retrival(self):
+		for patient in os.listdir('Dataset\\Patients'):
+			df = pd.read_csv(f'Dataset\\Patients\\{patient}')
+			print(patient)
+			split = int(.75*len(df))
+			X_train, y_train = df.iloc[:split].drop(['SBP','DBP'],axis=1), df.iloc[:split][['SBP','DBP']]
+			X_test, y_test = df.iloc[split-1:].drop(['SBP','DBP'],axis=1), df.iloc[split-1:][['SBP','DBP']]
+			# X, y = df.drop(['SBP','DBP'],axis=1), df[['SBP','DBP']]
+			# for solver in ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']:
+			# fig, axs = plt.subplots(4,1,sharex=True) 
+			# fig.set_size_inches((16,9))
+
+			cnt=0
+			model = Ridge()
+			cv = RepeatedKFold(n_splits=10, n_repeats=3, random_state=1)
+			grid = dict()
+			grid['alpha'] = np.arange(0, 1, 0.01)
+			search = GridSearchCV(model, grid, scoring='neg_mean_absolute_error', cv=cv, n_jobs=-1)
+			results = search.fit(X_train, y_train)
+
+			y_hat = search.predict(X_test)
+			alpha = results.best_params_['alpha']
+
+			print('MAE: %.3f' % results.best_score_)
+			print('Config: %s' % results.best_params_)
+
+				# clf = Ridge(alpha=alpha)
+				# clf.fit(X_train, y_train)
+				# y_hat = clf.predict(X_test)
+
+			y_hat = pd.DataFrame(y_hat)
+			y_hat.columns = ['SBP Pred','DBP Pred']
+			y_test.columns = ['SBP Test','DBP Test']
+			y_hat.index = y_test.index
+
+			ax = y_train.plot()
+			y_hat.plot(ax=ax)
+			y_test.plot(ax=ax)
+			plt.title(f'alpha = {alpha}')
+			plt.tight_layout()
+				# cnt+=1
+
+			plt.show()
+
+
+
 
 	def find_ptt(self, sbp,dbp,sbp_time,dbp_time,Rf,SPf,timestamp,abp,ecg,ppg,batch):
 		""" 
@@ -326,9 +420,11 @@ class DataRegressor(object):
 					found = 1
 					start = j+1
 					if j <len(Rf)-1:
-						hr = 60/((timestamp[Rf[j+1]] - ecg_time)/1000)
+						hr = 60/((timestamp[Rf[j+1]] - ecg_time))
+						# hr = 60/((timestamp[Rf[j+1]] - ecg_time)/1000)
 					else:
-						hr = 60/((ecg_time - timestamp[Rf[j-1]])/1000)
+						hr = 60/((ecg_time - timestamp[Rf[j-1]]))
+						# hr = 60/((ecg_time - timestamp[Rf[j-1]])/1000)
 					Mptt.append(ptt)
 					Mhr.append(hr)
 					Msbp.append(sbp_val[i])
@@ -360,6 +456,7 @@ class DataRegressor(object):
 		plt.savefig(f'Plots\\Find PTT\\{batch}_{title}.png') 
 							
 		return Mptt,Mhr,Msbp,Mdbp,Mmap
+
 	def plot(self, objs, labs, xlab, ylab, title):
 		plt.close('all')
 		# plt.figure(figsize=())
@@ -843,5 +940,6 @@ class DataRegressor(object):
 DR = DataRegressor()
 # DR.create_dataset()
 # DR.interpolation()
-DR.SBP_DBP_values()
+# DR.SBP_DBP_values()
+DR.BP_retrival()
 # DR.standardize()
