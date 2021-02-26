@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import GridSearchCV, RepeatedKFold
 warnings.simplefilter("ignore")
-# import scipy.fft 
+import scipy.fft 
+import scipy.signal
 # import MIMICUtil as ut
 # import heartpy as hp
 # from sklearn.preprocessing import StandardScaler
@@ -97,28 +98,172 @@ class DataRegressor(object):
 		sd = a.std(axis=axis,ddof=ddof)
 		return np.where(sd == 0, 0, m/sd)
 
-	def cleanWindRSP(self, R, SP, dTepmin=100,dTepmax=1000):
-		SP = list(SP)
-		R = list(R)
-		R_f = []
-		SP_f = []
-		""" start from the first R point """
+	def cleanWindRSP(self, R, SP, ecg, ppg, time, dTepmin=100,dTepmax=1000):
+		"""
+		R/SP: indices of peaks 
+		ecg/ppg: y values (i.e. ecg[x] == 0.2mV)
+		time: x values (i.e. time[x] == 20s)
+		"""
+		# plt.fill_between(x_integral, 0, kde(x_integral),
+  #                alpha=0.3, color='b', label="Area: {:.3f}".format(integral))
 		if SP[0] < R[0]:
 			SP.pop(0)
-		start = 0  
-		for i in range(len(R)-1):
-			found = 0
+
+		fig, axs = plt.subplots(2,1,sharex=True)
+
+		x_ppg = np.arange(min(ppg),max(ppg),.001)
+		x_ecg = np.arange(min(ecg),max(ecg),.001)
+		SP = list([x for x in SP if round(ppg[x],3)!=0])
+		R = list([x for x in R if round(ecg[x],3)!=0])
+
+		kde_ppg = stats.gaussian_kde(ppg)
+		kde_sp = stats.gaussian_kde(ppg[SP])
+		kde_ecg = stats.gaussian_kde(ecg)
+		kde_r = stats.gaussian_kde(ecg[R])
+
+		peak_r, _ = scipy.signal.find_peaks(kde_r(x_ecg))
+		r_idx = np.argmax(kde_r(x_ecg)[peak_r])
+		peak_r = peak_r[r_idx]
+
+		peak_sp, _ = scipy.signal.find_peaks(kde_sp(x_ppg))
+		sp_idx = np.argmax(kde_sp(x_ppg)[peak_sp])
+		peak_sp = peak_sp[sp_idx]
+
+		x_r_min,x_r_max = x_ecg[peak_r]*.8, x_ecg[peak_r]*1.2
+		x_sp_min,x_sp_max = x_ppg[peak_sp]*.7, x_ppg[peak_sp]*1.3
+
+		# axs[0].plot(x_ecg,kde_ecg(x_ecg),label='ecg')
+		# axs[0].plot(x_ecg,kde_r(x_ecg),label='R')
+		# axs[0].scatter(x_ecg[peak_r],kde_r(x_ecg)[peak_r],c='red')
+		# axs[0].axvline(x_r_min)
+		# axs[0].axvline(x_r_max)
+		# axs[0].legend()
+		
+		# axs[1].plot(x_ppg,kde_ppg(x_ppg),label='ppg')
+		# axs[1].plot(x_ppg,kde_sp(x_ppg),label='SP')
+		# axs[1].scatter(x_ppg[peak_sp],kde_sp(x_ppg)[peak_sp],c='red')
+		# axs[1].axvline(x_sp_min)
+		# axs[1].axvline(x_sp_max)
+		# axs[1].legend()
+		# plt.show()
+		R_f = [x for x in R if x_r_min<=ecg[x]<=x_r_max]	
+		SP_f = [x for x in SP if x_sp_min<=ppg[x]<=x_sp_max]	
+		return R_f, SP_f
+
+	def find_ptt(self, sbp, dbp,sbp_time,dbp_time,Rf,SPf,timestamp,abp,ecg,ppg,batch):
+		""" 
+			dTps : time delay between SBP point and SP point
+			dTes : time delay between SBP point and R peak
+			dTpe : time delay between R point and SP 
+			sbp/dbp : list of SBP/DBP indexes
+			sbp_time/dbp_time : timestamp corresponding to SBP/DBP
+			Rf : list of R peak indexes
+			SPf : list of SP indexes
+			timestamp/abp/ecg/ppg : series
+			patient : string """
+
+		for x in [sbp, dbp, Rf, SPf]:
+			x = timestamp[x]
+
+		c = np.min([len(sbp),len(dbp),len(Rf),len(SPf)])-1
+		start = 0
+		Mptt,Mhr,Msbp,Mdbp,Mmap = [], [], [], [], []
+		sbp_val = abp[sbp]
+		dbp_val = abp[dbp]
+		ctr_false = 0
+
+		plt.close('all')
+		fig, axs = plt.subplots(2,1, sharex=True) 
+		fig.set_size_inches((16,9))
+		axs[0].plot(dbp,abp[dbp],'r^',label = 'DBP')
+		axs[0].plot(sbp,abp[sbp],'y^',label = 'SBP')
+		axs[1].plot(SPf,ppg[SPf],'mx',label = 'SP')
+		axs[1].plot(Rf,ecg[Rf],'gx',label = 'R')
+		# plt.show()
+		# print(len(SPf),len(Rf))
+
+		print(sbp)
+		print(Rf)
+		time = np.arange(0,7500,1)
+		y = time*0
+		cnt = 0
+
+		y[np.argwhere(time==sbp)] = 1
+		y[np.argwhere(time==Rf)] = 1
+		y[np.argwhere(time==SPf)] = 1
+		# y[time==Rf]=2
+		# y[time==SPf]=3
+
+		print(time,y)
+		plt.plot(time,y)
+		plt.show()
+
+		# for t in time:
+		# 	t_sbp, t_Rf, t_SPf = sbp[cnt], Rf[cnt], SPf[cnt]
+		# 	if t > t_sbp:
+		# 		if t_sbp > t_Rf > t_SPf:
+				
+		# 		else:
+		# 			cnt+=1
+		# 			t_sbp, t_Rf, t_SPf = sbp[cnt], Rf[cnt], SPf[cnt]
+
+
+
+
+
+
+		for i in range(c):
+			sbp_t = sbp_time[i]
+			#dbp_t = dbp_time[i]
+			found = 0 #NOT FOUND
 			j = start
-			while found == 0 and j< len(SP):
-				if SP[j] > R[i] +dTepmin and SP[j] < R[i] + dTepmax:
+			ctr = 0
+			while found == 0 and j < len(Rf)-1 and ctr <=20:
+				ppg_time = timestamp[SPf[j]]
+				ecg_time = timestamp[Rf[j]]   
+				ptt = ppg_time - ecg_time	 
+				print(j)
+
+				if sbp_t < ppg_time < sbp_t + self.dTps and sbp_t < ecg_time < sbp_t + self.dTes and ppg_time < ecg_time + self.dTpe :
 					found = 1
 					start = j+1
-					SP_f.append(SP[j])
-					R_f.append(R[i])
-				else:
-					found = 0
-					j+=1					
-		return R_f, SP_f
+					if j <len(Rf)-1:
+						hr = 60/((timestamp[Rf[j+1]] - ecg_time))
+						# hr = 60/((timestamp[Rf[j+1]] - ecg_time)/1000)
+					else:
+						hr = 60/((ecg_time - timestamp[Rf[j-1]]))
+						# hr = 60/((ecg_time - timestamp[Rf[j-1]])/1000)
+					Mptt.append(ptt)
+					Mhr.append(hr)
+					Msbp.append(sbp_val[i])
+					Mdbp.append(dbp_val[i])
+					Mmap.append(float((sbp_val[i]+2*dbp_val[i])/3))
+					
+					axs[1].vlines(Rf[j],ymin = 0, ymax=np.abs(ptt), colors='black', linestyles='dotted', linewidth=1, alpha=0.6)
+					axs[1].vlines(SPf[j],ymin = 0, ymax=np.abs(ptt), colors='black', linestyles='dotted', linewidth=1, alpha=0.6)
+					if i == 0 :
+						axs[1].hlines(np.abs(ptt), xmin=Rf[j], xmax=SPf[j], colors='red', linestyles='solid', label='ptt')
+					else:
+						axs[1].hlines(np.abs(ptt), xmin=Rf[j], xmax=SPf[j], colors='red', linestyles='solid')
+						
+				else : 
+					j = j+1
+					found  = 0
+					ctr = ctr + 1  
+					ctr_false = ctr_false + 1
+					if ctr_false == 5:
+						break
+		axs[0].legend(loc='upper right')
+		axs[1].legend(loc='upper right')
+		title = 'Corresponding values'
+		fig.suptitle(title)
+		plt.xlabel('Indices')
+		axs[0].set_ylabel('ABP [mmHg]')
+		axs[1].set_ylabel('PTT [ms]')
+		plt.tight_layout()
+		plt.savefig(f'Plots\\Find PTT\\{batch}_{title}.png') 
+							
+		return Mptt,Mhr,Msbp,Mdbp,Mmap
 
 	def cleanWindDSBP(self,dbp,sbp,dTsdmin=100,dTsdmax=1500):
 		""" Clean windows : R and SP - Retain only Cardiac cycles where both R and SP valid points are found.
@@ -218,9 +363,9 @@ class DataRegressor(object):
 					DBPs,_ = scipy.signal.find_peaks(-ABP,prominence=.5,distance=60,width=10)
 					SBPs,_ = scipy.signal.find_peaks(ABP,prominence=.5,distance=60,width=10)
 
-					if len(DBPs) != 0 and len(SBPs)!= 0 and len(Rs) != 0 and len(SPs) != 0:
+					if len(DBPs)!=0 and len(SBPs)!=0 and len(Rs)!=0 and len(SPs)!=0:
 						DBPs_f, SBPs_f = self.cleanWindDSBP(DBPs, SBPs)
-						Rs_f, SPs_f = self.cleanWindRSP(Rs, SPs)
+						Rs_f, SPs_f = self.cleanWindRSP(Rs, SPs,ecg_filt,ppg_filt,index)
 						pat_dict[patient].update({batch:{}})
 						# print('Rs:',np.array(Rs))
 						# print('SPs:',np.array(SPs))
@@ -356,9 +501,9 @@ class DataRegressor(object):
 			print('MAE: %.3f' % results.best_score_)
 			print('Config: %s' % results.best_params_)
 
-				# clf = Ridge(alpha=alpha)
-				# clf.fit(X_train, y_train)
-				# y_hat = clf.predict(X_test)
+			# clf = Ridge(alpha=alpha)
+			# clf.fit(X_train, y_train)
+			# y_hat = clf.predict(X_test)
 
 			y_hat = pd.DataFrame(y_hat)
 			y_hat.columns = ['SBP Pred','DBP Pred']
@@ -374,88 +519,6 @@ class DataRegressor(object):
 
 			plt.show()
 
-
-
-
-	def find_ptt(self, sbp,dbp,sbp_time,dbp_time,Rf,SPf,timestamp,abp,ecg,ppg,batch):
-		""" 
-			dTps : time delay between SBP point and SP point
-			dTes : time delay between SBP point and R peak
-			dTpe : time delay between R point and SP 
-			sbp/dbp : list of SBP/DBP indexes
-			sbp_time/dbp_time : timestamp corresponding to SBP/DBP
-			Rf : list of R peak indexes
-			SPf : list of SP indexes
-			timestamp/abp/ecg/ppg : series
-			patient : string """
-		c = np.min([len(sbp),len(dbp)])-1
-		start = 0
-		Mptt,Mhr,Msbp,Mdbp,Mmap = [], [], [], [], []
-		sbp_val = abp[sbp]
-		dbp_val = abp[dbp]
-		ctr_false = 0
-
-		plt.close('all')
-		fig, axs = plt.subplots(2,1, sharex=True) 
-		fig.set_size_inches((16,9))
-		axs[0].plot(dbp,abp[dbp],'r^',label = 'DBP')
-		axs[0].plot(sbp,abp[sbp],'y^',label = 'SBP')
-		axs[1].plot(SPf,ppg[SPf],'mx',label = 'SP')
-		axs[1].plot(Rf,ecg[Rf],'gx',label = 'R')
-		for i in range(c):
-			sbp_t = sbp_time[i]
-			#dbp_t = dbp_time[i]
-			found = 0
-			j = start
-			ctr = 0
-			while found == 0 and j < len(Rf)-1 and ctr <=20:
-				ppg_time = timestamp[SPf[j]]
-				ecg_time = timestamp[Rf[j]]   
-				ptt = ppg_time - ecg_time	 
-				# print('i = %d   j=%d'%(i,j))
-				# print('ppg_t = %.2f   diff = %.2f '%(ppg_time,ppg_time-sbp_t))
-				# print('ecg_t = %.2f   diff = %.2f '%(ecg_time,ecg_time-sbp_t))
-				# print(ppg_time > sbp_t, ppg_time < sbp_t + 1500, ecg_time > sbp_t,ecg_time < sbp_t + 700,ppg_time < ecg_time + 800)
-				if ppg_time > sbp_t and ppg_time < sbp_t + self.dTps and ecg_time > sbp_t and ecg_time < sbp_t + self.dTes and ppg_time < ecg_time + self.dTpe :
-					found = 1
-					start = j+1
-					if j <len(Rf)-1:
-						hr = 60/((timestamp[Rf[j+1]] - ecg_time))
-						# hr = 60/((timestamp[Rf[j+1]] - ecg_time)/1000)
-					else:
-						hr = 60/((ecg_time - timestamp[Rf[j-1]]))
-						# hr = 60/((ecg_time - timestamp[Rf[j-1]])/1000)
-					Mptt.append(ptt)
-					Mhr.append(hr)
-					Msbp.append(sbp_val[i])
-					Mdbp.append(dbp_val[i])
-					Mmap.append(float((sbp_val[i]+2*dbp_val[i])/3))
-					
-					axs[1].vlines(Rf[j],ymin = 0, ymax=np.abs(ptt), colors='black', linestyles='dotted', linewidth=1, alpha=0.6)
-					axs[1].vlines(SPf[j],ymin = 0, ymax=np.abs(ptt), colors='black', linestyles='dotted', linewidth=1, alpha=0.6)
-					if i == 0 :
-						axs[1].hlines(np.abs(ptt), xmin=Rf[j], xmax=SPf[j], colors='red', linestyles='solid', label='ptt')
-					else:
-						axs[1].hlines(np.abs(ptt), xmin=Rf[j], xmax=SPf[j], colors='red', linestyles='solid')
-						
-				else : 
-					j = j+1
-					found  = 0
-					ctr = ctr + 1  
-					ctr_false = ctr_false + 1
-					if ctr_false == 5:
-						break
-		axs[0].legend(loc='upper right')
-		axs[1].legend(loc='upper right')
-		title = 'Corresponding values'
-		fig.suptitle(title)
-		plt.xlabel('Indices')
-		axs[0].set_ylabel('ABP [mmHg]')
-		axs[1].set_ylabel('PTT [ms]')
-		plt.tight_layout()
-		plt.savefig(f'Plots\\Find PTT\\{batch}_{title}.png') 
-							
-		return Mptt,Mhr,Msbp,Mdbp,Mmap
 
 	def plot(self, objs, labs, xlab, ylab, title):
 		plt.close('all')
@@ -940,6 +1003,6 @@ class DataRegressor(object):
 DR = DataRegressor()
 # DR.create_dataset()
 # DR.interpolation()
-# DR.SBP_DBP_values()
-DR.BP_retrival()
+DR.SBP_DBP_values()
+# DR.BP_retrival()
 # DR.standardize()
