@@ -40,6 +40,7 @@ class DataRegressor(object):
 		# 	config = file.read()
 		# self.HeightSPmin = 0.5
 		# self.HeightSPmax = 2
+		self.fs0 = 125
 		self.HeightRmin = .6
 		self.HeightRmax = 4
 
@@ -47,7 +48,6 @@ class DataRegressor(object):
 		self.NPEAK = 200
 		self.LENSEGM = 10 
 		self.K = 5
-		self.fs0 = 125
 		self.Z_SCORE_train = 5
 		self.Z_SCORE_test = 5
 		self.NSR_THRESHOLD = 30
@@ -105,7 +105,8 @@ class DataRegressor(object):
 		time: x values (i.e. time[x] == 20s)
 		"""
 		# plt.fill_between(x_integral, 0, kde(x_integral),
-  #                alpha=0.3, color='b', label="Area: {:.3f}".format(integral))
+		# alpha=0.3, color='b', label="Area: {:.3f}".format(integral))
+		SP, R = list(SP), list(R)
 		if SP[0] < R[0]:
 			SP.pop(0)
 
@@ -150,27 +151,21 @@ class DataRegressor(object):
 		SP_f = [x for x in SP if x_sp_min<=ppg[x]<=x_sp_max]	
 		return R_f, SP_f
 
-	def find_ptt(self, sbp, dbp,sbp_time,dbp_time,Rf,SPf,timestamp,abp,ecg,ppg,batch):
+	def find_ptt(self, sbp, dbp, Rf, SPf, timestamp, abp, ecg, ppg, batch):
 		""" 
 			dTps : time delay between SBP point and SP point
 			dTes : time delay between SBP point and R peak
 			dTpe : time delay between R point and SP 
 			sbp/dbp : list of SBP/DBP indexes
-			sbp_time/dbp_time : timestamp corresponding to SBP/DBP
 			Rf : list of R peak indexes
 			SPf : list of SP indexes
 			timestamp/abp/ecg/ppg : series
 			patient : string """
 
-		for x in [sbp, dbp, Rf, SPf]:
-			x = timestamp[x]
-
-		c = np.min([len(sbp),len(dbp),len(Rf),len(SPf)])-1
-		start = 0
-		Mptt,Mhr,Msbp,Mdbp,Mmap = [], [], [], [], []
-		sbp_val = abp[sbp]
-		dbp_val = abp[dbp]
-		ctr_false = 0
+		flag = True
+		Mptt,Mhr,Msbp,Mdbp = [], [], [], []
+		# sbp_val = abp[sbp]
+		# dbp_val = abp[dbp]
 
 		plt.close('all')
 		fig, axs = plt.subplots(2,1, sharex=True) 
@@ -179,91 +174,114 @@ class DataRegressor(object):
 		axs[0].plot(sbp,abp[sbp],'y^',label = 'SBP')
 		axs[1].plot(SPf,ppg[SPf],'mx',label = 'SP')
 		axs[1].plot(Rf,ecg[Rf],'gx',label = 'R')
-		# plt.show()
-		# print(len(SPf),len(Rf))
 
-		print(sbp)
-		print(Rf)
 		time = np.arange(0,7500,1)
+		real_time = time/self.fs0
 		y = time*0
 		cnt = 0
+		for k in range(len(time)):
+			# if time[k] in sbp:
+			# 	y[k]=1
+			if time[k] in Rf:
+				y[k]=1
+			if time[k] in SPf:
+				y[k]=2
 
-		y[np.argwhere(time==sbp)] = 1
-		y[np.argwhere(time==Rf)] = 1
-		y[np.argwhere(time==SPf)] = 1
-		# y[time==Rf]=2
-		# y[time==SPf]=3
+		index = np.argwhere(y>0).flatten()
+		yy = list(y[index])
+		time1 = time[index]
 
-		print(time,y)
-		plt.plot(time,y)
-		plt.show()
+		results = []
+		b = [1,2]
+		# b = [1,2,3]
+		results = [i for i in range(len(yy)) if yy[i:i+len(b)] == b]
+		if results != []:
+			#indices of yy where the terna start
+			# index_sbp = time1[results]
+			index_rf = time1[np.array(results)]
+			index_spf = time1[np.array(results)+1]
 
-		# for t in time:
-		# 	t_sbp, t_Rf, t_SPf = sbp[cnt], Rf[cnt], SPf[cnt]
-		# 	if t > t_sbp:
-		# 		if t_sbp > t_Rf > t_SPf:
-				
-		# 		else:
-		# 			cnt+=1
-		# 			t_sbp, t_Rf, t_SPf = sbp[cnt], Rf[cnt], SPf[cnt]
+			# time_sbp = real_time[index_sbp]
+			time_rf = real_time[index_rf]
+			time_spf = real_time[index_spf]
 
+			rf_diff = np.diff(time_rf)
+			ptt = time_spf - time_rf
 
+			try:
+				axis = np.arange(0,5,.01)
+				kde = stats.gaussian_kde(rf_diff)
+				peaks,_ = scipy.signal.find_peaks(kde(axis))
+			except:
+				peaks = [] 
+			
+			hr,index_hr=[],[]
+			if len(peaks)>1:
+				for x,y in zip(rf_diff, index_rf):
+					if x < np.mean(rf_diff)*1.4:
+						hr.append(60/x)
+						index_hr.append(y)
+				# hr = np.array([60/x for x in rf_diff if x < np.mean(rf_diff)*1.4])
+				# index_hr = np.array([x for x in rf_diff if x < np.mean(rf_diff)*1.4])
+			else:
+				hr = 60/rf_diff
+				index_hr = index_rf
 
+			hr,index_hr = np.array(hr), np.array(index_hr)
 
+			# DBP,x_DBP = [],[]
+			# for i in time_sbp:
+			# 	mask = [timestamp[dbp]>i]
+			# 	if np.array(dbp)[mask] != []:
+			# 		tmp = real_time[np.array(dbp)[mask][0]]
+			# 		idx = np.array(dbp)[mask][0]
+			# 		dbp_val = abp[np.array(dbp)[mask][0]]
+			# 		if (tmp - i) < np.mean(hr/(2*60))*1.1:
+			# 			DBP.append(dbp_val)
+			# 			x_DBP.append(idx)
 
+			axs[1].hlines(ptt, xmin=index_rf, xmax=index_spf, colors='red', linestyles='solid', label='ptt')
+			axs[0].legend(loc='upper right')
+			axs[1].legend(loc='upper right')
+			title = 'Corresponding values'
+			fig.suptitle(title)
+			plt.xlabel('Indices')
+			axs[0].set_ylabel('ABP [mmHg]')
+			axs[1].set_ylabel('PTT [ms]')
+			plt.tight_layout()
+			plt.savefig(f'Plots\\Find PTT\\{batch}_{title}.png') 
+			
+			# SBP = abp[index_sbp]
+			# x_SBP = index_sbp
+			# SBP[:] = np.nan
+			# sbp_tmp = abp[index_sbp]
+			
+			HR = hr
+			x_HR = index_hr
+			# HR[:] = np.nan
 
-		for i in range(c):
-			sbp_t = sbp_time[i]
-			#dbp_t = dbp_time[i]
-			found = 0 #NOT FOUND
-			j = start
-			ctr = 0
-			while found == 0 and j < len(Rf)-1 and ctr <=20:
-				ppg_time = timestamp[SPf[j]]
-				ecg_time = timestamp[Rf[j]]   
-				ptt = ppg_time - ecg_time	 
-				print(j)
+			PTT = ptt
+			x_PTT = index_rf
+ 			# PTT[:] = np.nan
 
-				if sbp_t < ppg_time < sbp_t + self.dTps and sbp_t < ecg_time < sbp_t + self.dTes and ppg_time < ecg_time + self.dTpe :
-					found = 1
-					start = j+1
-					if j <len(Rf)-1:
-						hr = 60/((timestamp[Rf[j+1]] - ecg_time))
-						# hr = 60/((timestamp[Rf[j+1]] - ecg_time)/1000)
-					else:
-						hr = 60/((ecg_time - timestamp[Rf[j-1]]))
-						# hr = 60/((ecg_time - timestamp[Rf[j-1]])/1000)
-					Mptt.append(ptt)
-					Mhr.append(hr)
-					Msbp.append(sbp_val[i])
-					Mdbp.append(dbp_val[i])
-					Mmap.append(float((sbp_val[i]+2*dbp_val[i])/3))
-					
-					axs[1].vlines(Rf[j],ymin = 0, ymax=np.abs(ptt), colors='black', linestyles='dotted', linewidth=1, alpha=0.6)
-					axs[1].vlines(SPf[j],ymin = 0, ymax=np.abs(ptt), colors='black', linestyles='dotted', linewidth=1, alpha=0.6)
-					if i == 0 :
-						axs[1].hlines(np.abs(ptt), xmin=Rf[j], xmax=SPf[j], colors='red', linestyles='solid', label='ptt')
-					else:
-						axs[1].hlines(np.abs(ptt), xmin=Rf[j], xmax=SPf[j], colors='red', linestyles='solid')
-						
-				else : 
-					j = j+1
-					found  = 0
-					ctr = ctr + 1  
-					ctr_false = ctr_false + 1
-					if ctr_false == 5:
-						break
-		axs[0].legend(loc='upper right')
-		axs[1].legend(loc='upper right')
-		title = 'Corresponding values'
-		fig.suptitle(title)
-		plt.xlabel('Indices')
-		axs[0].set_ylabel('ABP [mmHg]')
-		axs[1].set_ylabel('PTT [ms]')
-		plt.tight_layout()
-		plt.savefig(f'Plots\\Find PTT\\{batch}_{title}.png') 
-							
-		return Mptt,Mhr,Msbp,Mdbp,Mmap
+			# try:
+			# 	PTT[index_rf] = ptt
+			# 	SBP[index_sbp] = sbp_tmp
+			# 	HR[index_hr] = hr
+			# except:
+			# 	pass
+
+		else: 
+			flag = False
+			PTT,HR = [], []
+			x_PTT,x_HR = [], []
+
+		if len(PTT)<5 or len(HR)<5:
+			flag = False
+		
+		print(len(PTT),len(x_PTT))
+
+		return PTT,x_PTT, HR,x_HR,flag
 
 	def cleanWindDSBP(self,dbp,sbp,dTsdmin=100,dTsdmax=1500):
 		""" Clean windows : R and SP - Retain only Cardiac cycles where both R and SP valid points are found.
@@ -285,7 +303,7 @@ class DataRegressor(object):
 		""" start from the first SBP point """
 		if dbp[0] < sbp[0]:
 			dbp.pop(0)
-		start = 0  
+		start = 0 
 		for i in range(len(sbp)-1):
 			found = 0
 			j = start
@@ -298,7 +316,7 @@ class DataRegressor(object):
 				else:
 					found = 0
 					j+=1
-		return dbp,sbp
+		return dbp_f,sbp_f
 
 	def SBP_DBP_values(self):
 		ppg,ecg,abp = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -327,14 +345,15 @@ class DataRegressor(object):
 		# Find length of cardiac cycle 
 		# wind_len = ut.findCC(ecg_int,self.WindLenDefault,self.WindStdCoef,patient)
 		
-		# iter_lst = ppg.columns[:4]
 		iter_lst = ppg.columns
+		# iter_lst = ppg.columns[:4]
 
 		for col in iter_lst:
 			print(f'******************** Batch: {col} ********************')
 			filt = True
+			# filt = '3001023' in col
+			# filt = '3000393' not in col and 
 			patient, batch = col.split('_')
-			# filt = '3002511_12' in col
 			try:
 				temporary = pat_dict[patient]
 			except:
@@ -414,26 +433,62 @@ class DataRegressor(object):
 						# plt.show()
 						if self.savefile:
 							plt.savefig(f'Plots\\Batches\\{col}.png')
-					
-						Mptt,Mhr,Msbp,Mdbp,Mmap = self.find_ptt(SBPs_f, DBPs_f, x_SBP, x_DBP, Rs_f, SPs_f,
-															index, ABP, ecg_filt, ppg_filt, col)
 
-						pat_dict[patient][batch].update({'PTT':Mptt})
-						pat_dict[patient][batch].update({'HR':Mhr})
-						pat_dict[patient][batch].update({'SBP':Msbp})
-						pat_dict[patient][batch].update({'DBP':Mdbp})
-		
+						Mptt,x_PTT,Mhr,x_HR,flag = self.find_ptt(SBPs_f, DBPs_f, Rs_f, SPs_f, index, ABP, ecg_filt, ppg_filt, col)
+						Mptt,Mhr,Msbp,Mdbp,x_HR,x_SBP,x_DBP,x_PTT = list(Mptt),list(Mhr),list(ABP[SBPs_f]),list(ABP[DBPs_f]), list(x_HR),list(SBPs_f),list(DBPs_f),list(x_PTT)
+
+						if flag:
+							pat_dict[patient][batch].update({'PTT':Mptt})
+							pat_dict[patient][batch].update({'HR':Mhr})
+							pat_dict[patient][batch].update({'SBP':Msbp})
+							pat_dict[patient][batch].update({'DBP':Mdbp})
+							
+							pat_dict[patient][batch].update({'x_PTT':x_PTT})
+							pat_dict[patient][batch].update({'x_HR':x_HR})
+							pat_dict[patient][batch].update({'x_SBP':x_SBP})
+							pat_dict[patient][batch].update({'x_DBP':x_DBP})
+
+						else:
+							pat_dict[patient][batch].update({'PTT':[None]})
+							pat_dict[patient][batch].update({'HR':[None]})
+							pat_dict[patient][batch].update({'SBP':[None]})
+							pat_dict[patient][batch].update({'DBP':[None]})
+							pat_dict[patient][batch].update({'PTT':[None]})
+							pat_dict[patient][batch].update({'HR':[None]})
+							pat_dict[patient][batch].update({'SBP':[None]})
+							pat_dict[patient][batch].update({'DBP':[None]})
+		# print(pat_dict)
+		PAT_ITER = []
 		for patient in pat_dict.keys():
 			PTT,HR,SBP,DBP = [], [], [], []
+			x_PTT,x_HR,x_SBP,x_DBP = [], [], [], []
+			if bool(pat_dict[patient].keys()):
+				PAT_ITER.append(patient)
+
+		for patient in PAT_ITER:
 			batches = pat_dict[patient].keys()
 			[PTT.extend(pat_dict[patient][x]['PTT']) for x in batches]
 			[HR.extend(pat_dict[patient][x]['HR']) for x in batches]
 			[SBP.extend(pat_dict[patient][x]['SBP']) for x in batches]
 			[DBP.extend(pat_dict[patient][x]['DBP']) for x in batches]
 
-			DF = pd.DataFrame({'PTT':PTT,'HR':HR,'SBP':SBP,'DBP':DBP})
+			[x_PTT.extend(pat_dict[patient][x]['x_PTT']) for x in batches]
+			[x_HR.extend(pat_dict[patient][x]['x_HR']) for x in batches]
+			[x_SBP.extend(pat_dict[patient][x]['x_SBP']) for x in batches]
+			[x_DBP.extend(pat_dict[patient][x]['x_DBP']) for x in batches]
+
+			print(len(PTT),len(x_PTT))
+
+			PTT_df = pd.DataFrame({'PTT':PTT,'x_PTT':x_PTT})
+			HR_df = pd.DataFrame({'HR':HR,'x_HR':x_HR})
+			SBP_df = pd.DataFrame({'SBP':SBP,'x_SBP':x_SBP})
+			DBP_df = pd.DataFrame({'DBP':DBP,'x_DBP':x_DBP})
+
 			self.create_path("Dataset\\Patients")
-			DF.to_csv('Dataset\\Patients\\'+patient+'.csv')
+			PTT_df.to_csv('Dataset\\Patients\\PTT_'+patient+'.csv')
+			HR_df.to_csv('Dataset\\Patients\\HR_'+patient+'.csv')
+			SBP_df.to_csv('Dataset\\Patients\\SBP_'+patient+'.csv')
+			DBP_df.to_csv('Dataset\\Patients\\DBP_'+patient+'.csv')
 
 				# print(ecg_filt)
 				# print(ppg_filt)
@@ -515,10 +570,6 @@ class DataRegressor(object):
 			y_test.plot(ax=ax)
 			plt.title(f'alpha = {alpha}')
 			plt.tight_layout()
-				# cnt+=1
-
-			plt.show()
-
 
 	def plot(self, objs, labs, xlab, ylab, title):
 		plt.close('all')
@@ -670,336 +721,7 @@ class DataRegressor(object):
 			# plt.show()	
 			# exit()
 		
-	def run(self):	
-		filein = self.patient +'.csv'
-		file1 = pd.read_csv(filein,sep=',')
-		df = pd.DataFrame(file1).set_index('Time')
-		print(df)
 
-		# X,y = df[['II','PLETH']], df['ABP']
-		# # Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=.2, random_state=self.RS)
-		# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
-		# X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=1)
-		# clf = Ridge(alpha=1.0)
-		# clf.fit(X_train, y_train)
-		# score = clf.score(X_test,y_test)
-		# print(f"score is {round(score*100,1)} [%]")
-
-
-		batch_size = self.LENSEGM * self.fs0
-		n_batches = len(df)//batch_size
-
-		SNRe, SNRp, SNRE, SNRP = [], [], [], []
-		ECG,PPG,ABP,PTT,HR,SBP,DBP,MAP = [], [], [], [], [], [], [], []
-		dREAL,dPRED,dPTTtest,dHRtest,dERRM,dERRP = [], [], [], [], [], []
-		sREAL,sPRED,sPTTtest,sHRtest,sERRM,sERRP = [], [], [], [], [], []
-		dREAL_nobtb, dPRED_nobtb, dPTTtest_nobtb, dHRtest_nobtb = [], [], [], []
-		sREAL_nobtb, sPRED_nobtb, sPTTtest_nobtb, sHRtest_nobtb = [], [], [], []
-
-		train_done = False
-		curr_wind = 0 
-
-		for n in range(n_batches):
-			st, fin = batch_size*n,batch_size*(1+n)
-			ECGs,PPGs,ABPs, = df['II'].iloc[st:fin], df['PLETH'].iloc[st:fin], df['ABP'].iloc[st:fin]
-			timestamp = df.index[st:fin]
-
-			ecg_int,ppg_int,abp_int,timestamp_int = ut.interpolate_signal(ECGs,PPGs,ABPs,timestamp,self.STEP)
-
-			fs = self.fs0/self.STEP
-
-			ecg_filt = ut.filter_signal(ecg_int,0.5,49,fs,'ECG')
-			ppg_filt = ut.filter_signal(ppg_int,0.5,7,fs,'PPG')   
-
-			SNRe.append(ut.noisetosignal(ecg_filt, axis = 0, ddof = 0))
-			SNRp.append(ut.noisetosignal(ppg_filt, axis = 0, ddof = 0))
-			SNRE.append(ut.noisetosignal(ECGs, axis = 0, ddof = 0))
-			SNRP.append(ut.noisetosignal(PPGs, axis = 0, ddof = 0))
-
-			CORR = np.correlate(ppg_filt,ppg_filt)[0] 
-			nsr = ut.noisetosignal(PPGs, axis = 0, ddof = 0)
-
-			cnt_wind = 0
-
-			if nsr <= self.NSR_THRESHOLD and CORR >= self.CORR_THRESHOLD:
-				Rs,_ = scipy.signal.find_peaks(ecg_filt,prominence=.5,width=10)
-				SPs,_ = scipy.signal.find_peaks(ppg_filt,prominence=.1,width=10)
-				DBPs,_ = scipy.signal.find_peaks(-abp_int,prominence=.5,width=10)
-				SBPs,_ = scipy.signal.find_peaks(abp_int,prominence=.5,width=10)
-
-				if self.plot_peaks:
-					title = f'From {st} to {fin}'
-					self.plot([abp_int],['ABP'],'Steps','mmHg',title)
-					for x,y in zip(DBPs,SBPs):
-						plt.scatter(x,abp_int[x],color='red')
-						plt.scatter(y,abp_int[y],color='green')
-					#plt.show()
-
-				if train_done == False:
-					if len(Rs)>=2:
-						window_mean = np.mean(np.diff(Rs))
-						window_std = np.std(np.diff(Rs))   
-						wind_len_new = int(window_mean - window_std * self.CCStdCoef)
-					else:
-						window_mean = self.WindLenDefault
-						window_std = 1
-						wind_len_new = int(window_mean - window_std * self.CCStdCoef)
-
-					w = [cnt_wind,1]
-					arrw = [self.wind_len, wind_len_new]
-					self.wind_len =  np.ma.average(arrw,weights = w)
-					if self.wind_len < self.WindLenDefault-100 or self.wind_len > self.WindLenDefault + 120:
-						self.wind_len = self.WindLenDefault
-
-				dbp,sbp = ut.cleanWindDSBP(SBPs,DBPs,abp_int,self.wind_len,self.patient,self.dTsdmin,self.dTsdmax)
-				if len(dbp) >= 0:
-					sbp1, dbp1 = abp_int[sbp], abp_int[dbp]
-
-					sbp_mean = np.mean(sbp1)
-					sbp_std = np.std(sbp1)
-					dbp_mean = np.mean(dbp1)
-					dbp_std = np.std(dbp1)
-
-					sbp_time = list(timestamp_int[sbp])
-					dbp_time = list(timestamp_int[dbp])
-							
-					""" Clean windows with R and SP points """
-					Rf,SPf = ut.cleanWindRSP(SPs,Rs,ppg_int,ecg_int,self.wind_len,self.dTepmin,self.dTepmax)
-					if len(Rf)>=0:
-						""" Perform PTT computtion """
-						Mptt,Mhr,Msbp,Mdbp,Mmap = ut.find_ptt(self.dTps,self.dTes,self.dTpe,sbp1,dbp1,sbp_time,dbp_time,Rf,SPf,timestamp_int)
-
-				lst_x = [ECG,PPG,ABP,PTT,HR,SBP,DBP,MAP]
-				lst_y = [ecg_int,ppg_int,abp_int,Mptt,Mhr,Msbp,Mdbp,Mmap]
-				for x,y in zip(lst_x,lst_y):
-					x.extend(y)
-				l = len(Mptt)
-
-			cnt_wind += 1
-
-			if len(PTT) >= self.NPEAK and train_done == False:
-				print('Train')
-				FO = 2
-				train_done = True
-				lenPTT = len(PTT)
-				resid = lenPTT - self.NPEAK
-				PTT_t = PTT[0:self.NPEAK]
-				HR_t = HR[0:self.NPEAK]
-
-				print('DBP')
-				DBP_t = DBP[0:self.NPEAK]
-				dsol,dREG_COEFF,dERRtrain,dMAEtrain,dRMSEtrain,dcurr_wind,dmean,dstd,dR2,dTTEST = ut.perform_train(FO,PTT_t, 
-				HR_t, DBP_t, self.Z_SCORE_train, self.K, self.SOL_WEIGHT, curr_wind, cnt_wind)
-
-				print('SBP')
-				SBP_t = SBP[0:self.NPEAK]
-				ssol,sREG_COEFF,sERRtrain,sMAEtrain,sRMSEtrain,scurr_wind,smean,sstd,sR2,sTTEST = ut.perform_train(FO,PTT_t, 
-				HR_t, SBP_t, self.Z_SCORE_train, self.K, self.SOL_WEIGHT, curr_wind, cnt_wind)
-				if ssol[0][0] == 0 or dsol[0][0] == 0:
-					print('Error : no solution in regression')
-
-			if train_done == True and cnt_wind > curr_wind and l>0:
-				curr_wind = cnt_wind
-				print('Test')
-				print('DBP')
-				dreal,dpred,dptttest,dhrtest,derrm,derrp = ut.perform_test(PTT,HR,DBP,dsol,FO,self.Z_SCORE_test,l,dmean,dstd)
-				lst_x = [dREAL,dPRED,dPTTtest,dHRtest,dERRM,dERRP]
-				lst_y = [dreal,dpred,dptttest,dhrtest,derrm,derrp]
-				for x,y in zip(lst_x,lst_y):
-					x.extend(y)
-
-				print('SBP')
-				sreal,spred,sptttest,shrtest,serrm,serrp = ut.perform_test(PTT,HR,SBP,ssol,FO,self.Z_SCORE_test,l,smean,sstd)
-				lst_x = [sREAL,sPRED,sPTTtest,sHRtest,sERRM,sERRP]
-				lst_y = [sreal,spred,sptttest,shrtest,serrm,serrp]
-				for x,y in zip(lst_x,lst_y):
-					x.extend(y)
-
-				print('Test - no beat-to-beat')
-				print('DBP')
-				dreal_nobtb,dpred_nobtb,dptt_nobtb,dhr_nobtb = ut.perform_test_nobtb(PTT,HR,DBP,dsol,FO,l,dmean,dstd)
-				lst_x = [dREAL_nobtb, dPRED_nobtb, dPTTtest_nobtb, dHRtest_nobtb]
-				lst_y = [dreal_nobtb[0], dpred_nobtb[0][0], dptt_nobtb, dhr_nobtb]
-				for x,y in zip(lst_x,lst_y):
-					x.append(y)
-
-				print('SBP')					   
-				sreal_nobtb,spred_nobtb,sptt_nobtb,shr_nobtb = ut.perform_test_nobtb(PTT,HR,SBP,ssol,FO,l,smean,sstd)
-				lst_x = [sREAL_nobtb, sPRED_nobtb, sPTTtest_nobtb, sHRtest_nobtb]
-				lst_y = [sreal_nobtb[0], spred_nobtb[0][0], sptt_nobtb, shr_nobtb]
-				for x,y in zip(lst_x,lst_y):
-					x.append(y)
-
-
-				resid = 0 #this is different from 0 only for the first cycle, when PTT is longer than NSAMPLE, so NSAMPLE are used for the training and the rest is tested
-				""" Debugging part : plot if error larger than 10 """
-				inn = 0
-
-		if len(PTT) >= self.NPEAK:
-			print(f'patient:{self.patient}')
-			data_tmp = pd.DataFrame({'PTT':PTT,'HR':HR,'SBP':SBP,'DBP':DBP,'MAP':MAP}) 
-			data_tmp = data_tmp.loc[~(data_tmp==0).all(axis=1)]
-			data_tmp.dropna(inplace = True)
-			data_tmp = data_tmp[(np.abs(stats.zscore(data_tmp)) < self.Z_SCORE_test).all(axis=1)]
-			print('\nPTT_mean = %.2f  PTT_std = %.2f' %(data_tmp['PTT'].mean(), data_tmp['PTT'].std()))
-			print('DBP')
-			print('Regression coeff : a_ptt = %.3f   b_hr = %.3f' %(dsol[0][0],dsol[0][1]))
-			print('RMSE_train mean = %.2f   RMSE std = %.2f' %(np.mean(dRMSEtrain), np.std(dRMSEtrain)))
-			print('MAE_train mean = %.2f   MAE std = %.2f' %(np.mean(dMAEtrain), np.std(dMAEtrain)))
-			#print('R2mean = %.3f   Ttest : statistic = %.3f   p-value = %.3f' %(np.mean(R2),TTEST[0][0],TTEST[1][0]))#careful! see all values!
-			print('MAE_test = %.2f  RMSE_test = %.2f   NsamplesTest = %d \n' %(mean_absolute_error(dREAL,dPRED), mean_squared_error(dREAL,dPRED,squared = False),len(dREAL)))
-
-			err_bp,err_ptt,right_bp,right_ptt = [], [], [], []
-			err_perc = 0
-
-			err = np.array(dREAL) - np.array(dPRED)
-			for i in range(len(err)):
-				if np.abs(err[i]) >= 10 :
-					err_bp.append(dREAL[i])
-					err_ptt.append(dPTTtest[i])
-				if np.abs(err[i]) < 10:
-					right_bp.append(dREAL[i])
-					right_ptt.append(dPTTtest[i])
-			err_perc = len(err_ptt) / len(err) * 100
-			print('Error >= 10 mmHg occurs the %.2f %% of the times' %(err_perc))
-			print('Number of samples tested = %d   err>10 occurrences = %d'%(len(dREAL),len(err_ptt)))
-			print('Wrong prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f' %(np.mean(err_ptt),np.std(err_ptt),np.mean(err_bp),np.std(err_bp)))
-			print('Right prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f \n' %(np.mean(right_ptt),np.std(right_ptt),np.mean(right_bp),np.std(right_bp)))
-
-			x = np.arange(0,len(dPRED),1)
-			title = 'DBP Real vs. Pred - test'
-			self.plot([dREAL,dPRED],['Real','Pred'],'Test samples','BP [mmHg]',title)
-			plt.savefig(self.patient + '_' +'RealVsPredFinDBP.png',format='png')
-			#plt.show()
-			plt.close('all')
-
-			plt.hist(np.array(dREAL)- np.array(dPRED),bins=50)
-			plt.xlabel('Error real-pred')
-			plt.ylabel('Instances')
-			plt.title('DBP RealVsPred_test_hist')
-			plt.savefig(self.patient + '_' + title + 'DBP.png',format='png')
-			#plt.show()
-			plt.close('all')
-
-			title = 'DBP and error test'
-			lst_plot = [dREAL,dPTTtest,dHRtest,np.array(dREAL)- np.array(dPRED)]
-			lst_lab = ['BP','ptt','hr','error']
-			lst_ylab = ['BP [mmHg]','PTT [ms]','HR [bpm]','ERR']
-			path_name = self.patient + '_' +title + '.png'
-			self.subplot(title,lst_plot,lst_lab,lst_ylab,'Test samples',path_name)
-
-			x = np.arange(0,len(dPRED_nobtb),1)
-			title = 'DBP Real vs pred test - no beat to beat'
-			self.plot([dREAL_nobtb,dPRED_nobtb],['Real','Pred'],'Test samples','BP [mmHg]',title)
-			plt.savefig(self.patient + '_' +'RealVsPredFinNobtbDBP.png',format='png')
-			#plt.show()
-			plt.close('all')
-
-			title = 'DBP and error test - no beat to beat'
-			err_nobtb = np.array(dREAL_nobtb)- np.array(dPRED_nobtb)
-			lst_plot = [dREAL_nobtb,dPTTtest_nobtb,dHRtest_nobtb,err_nobtb]
-			lst_lab = ['BP','ptt','hr','error']
-			lst_ylab = ['BP [mmHg]','PTT [ms]','HR [bpm]','ERR']
-			path_name = self.patient + '_' +title + '.png'
-			self.subplot(title,lst_plot,lst_lab,lst_ylab,'Test samples',path_name)
-
-			err_bp_nobtb, err_ptt_nobtb, right_bp_nobtb, right_ptt_nobtb = [], [], [], []
-			err_perc_nobtb = 0
-			for i in range(len(err_nobtb)):
-				if np.abs(err_nobtb[i]) >= 10 :
-					err_bp_nobtb.append(dREAL_nobtb[i])
-					err_ptt_nobtb.append(dPTTtest_nobtb[i])
-				if np.abs(err_nobtb[i]) < 10:
-					right_bp_nobtb.append(dREAL_nobtb[i])
-					right_ptt_nobtb.append(dPTTtest_nobtb[i])
-			err_perc_nobtb = len(err_ptt_nobtb) / len(err_nobtb) * 100
-
-			print('Test no beat-to-beat : intervals of %d seconds' %(self.LENSEGM))
-			print('MAE_test = %.2f  RMSE_test = %.2f   NsamplesTest = %d \n' %(mean_absolute_error(dREAL_nobtb,dPRED_nobtb), mean_squared_error(dREAL_nobtb,dPRED_nobtb,squared = False),len(dREAL_nobtb)))
-			print('Error >= 10 mmHg occurs the %.2f %% of the times' %(err_perc_nobtb))
-			print('Number of samples tested = %d   err>10 occurrences = %d'%(len(dREAL_nobtb),len(err_ptt_nobtb)))
-			print('Wrong prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f' %(np.mean(err_ptt_nobtb),np.std(err_ptt_nobtb),np.mean(err_bp_nobtb),np.std(err_bp_nobtb)))
-			print('Right prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f \n' %(np.mean(right_ptt_nobtb),np.std(right_ptt_nobtb),np.mean(right_bp_nobtb),np.std(right_bp_nobtb)))
-
-			print('SBP')
-			print('Regression coeff : a_ptt = %.3f   b_hr = %.3f' %(ssol[0][0],ssol[0][1]))
-			print('RMSE_train mean = %.2f   RMSE std = %.2f' %(np.mean(sRMSEtrain), np.std(sRMSEtrain)))
-			print('MAE_train mean = %.2f   MAE std = %.2f' %(np.mean(sMAEtrain), np.std(sMAEtrain)))
-			#print('R2mean = %.3f   Ttest : statistic = %.3f   p-value = %.3f' %(np.mean(R2),TTEST[0][0],TTEST[1][0]))#careful! see all values!
-			print('MAE_test = %.2f  RMSE_test = %.2f   NsamplesTest = %d \n' %(mean_absolute_error(sREAL,sPRED), mean_squared_error(sREAL,sPRED,squared = False),len(sREAL)))
-
-			err_bp, err_ptt, right_bp, right_ptt = [], [], [], []
-			err_perc = 0
-
-			err = np.array(sREAL)- np.array(sPRED)
-			for i in range(len(err)):
-				if np.abs(err[i]) >= 10 :
-					err_bp.append(sREAL[i])
-					err_ptt.append(sPTTtest[i])
-				if np.abs(err[i]) < 10:
-					right_bp.append(sREAL[i])
-					right_ptt.append(sPTTtest[i])
-			err_perc = len(err_ptt) / len(err) * 100
-			print('Error >= 10 mmHg occurs the %.2f %% of the times' %(err_perc))
-			print('Number of samples tested = %d   err>10 occurrences = %d'%(len(sREAL),len(err_ptt)))
-			print('Wrong prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f' %(np.mean(err_ptt),np.std(err_ptt),np.mean(err_bp),np.std(err_bp)))
-			print('Right prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f \n' %(np.mean(right_ptt),np.std(right_ptt),np.mean(right_bp),np.std(right_bp)))
-
-			x = np.arange(0,len(dPRED),1)
-			title = 'SBP Real vs. Pred - test'
-			self.plot([sREAL,sPRED],['Real','Pred'],'Test samples','BP [mmHg]',title)
-			plt.savefig(self.patient + '_' +'RealVsPredFinSBP.png',format='png')
-			#plt.show()
-			plt.close('all')
-
-			title = 'SBP RealVsPred_test_hist'
-			plt.hist(np.array(sREAL)- np.array(sPRED),bins=50)
-			plt.xlabel('Error real-pred')
-			plt.ylabel('Instances')
-			plt.title(title)
-			plt.savefig(self.patient + '_' + title + 'SBP.png',format='png')
-			#plt.show()
-			plt.close('all')
-
-			title = 'SBP and error test'
-			lst_plot = [sREAL,sPTTtest,sHRtest,np.array(sREAL)- np.array(sPRED)]
-			lst_lab = ['BP','ptt','hr','error']
-			lst_ylab = ['BP [mmHg]','PTT [ms]','HR [bpm]','ERR']
-			path_name = self.patient + '_' +title + '.png'
-			self.subplot(title,lst_plot,lst_lab,lst_ylab,'Test samples',path_name)
-
-			x = np.arange(0,len(sPRED_nobtb),1)
-			title = 'SBP: Real vs pred- Test (no beat to beat)'
-			self.plot([sREAL_nobtb,sPRED_nobtb],['Real','Pred'],'Test samples','BP [mmHg]',title)
-			plt.savefig(self.patient + '_' +'RealVsPredFinNobtbSBP.png.png',format='png')
-			#plt.show()
-			plt.close('all')
-
-			title = 'SBP and error test - no beat to beat'
-			lst_plot = [sREAL_nobtb,sPTTtest_nobtb,sHRtest_nobtb,err_nobtb]
-			lst_lab = ['BP','ptt','hr','error']
-			lst_ylab = ['BP [mmHg]','PTT [ms]','HR [bpm]','ERR']
-			path_name = self.patient + '_' +title + '.png'
-			self.subplot(title,lst_plot,lst_lab,lst_ylab,'Test samples',path_name)
-
-			err_bp_nobtb, err_ptt_nobtb, right_bp_nobtb, right_ptt_nobtb = [], [], [], []
-			err_perc_nobtb = 0
-
-			for i in range(len(err_nobtb)):
-				if np.abs(err_nobtb[i]) >= 10 :
-					err_bp_nobtb.append(sREAL_nobtb[i])
-					err_ptt_nobtb.append(sPTTtest_nobtb[i])
-				if np.abs(err_nobtb[i]) < 10:
-					right_bp_nobtb.append(sREAL_nobtb[i])
-					right_ptt_nobtb.append(sPTTtest_nobtb[i])
-			err_perc_nobtb = len(err_ptt_nobtb) / len(err_nobtb) * 100
-			print('Test no beat-to-beat : intervals of %d seconds' %(self.LENSEGM))
-			print('MAE_test = %.2f  RMSE_test = %.2f   NsamplesTest = %d \n' %(mean_absolute_error(sREAL_nobtb,sPRED_nobtb), mean_squared_error(sREAL_nobtb,sPRED_nobtb,squared = False),len(sREAL_nobtb)))
-			print('Error >= 10 mmHg occurs the %.2f %% of the times' %(err_perc_nobtb))
-			print('Number of samples tested = %d   err>10 occurrences = %d'%(len(sREAL_nobtb),len(err_ptt_nobtb)))
-			print('Wrong prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f' %(np.mean(err_ptt_nobtb),np.std(err_ptt_nobtb),np.mean(err_bp_nobtb),np.std(err_bp_nobtb)))
-			print('Right prediction :\nPTT mean = %.2f	std = %.2f   BP mean = %.2f   std = %.2f \n' %(np.mean(right_ptt_nobtb),np.std(right_ptt_nobtb),np.mean(right_bp_nobtb),np.std(right_bp_nobtb)))
-	   
 DR = DataRegressor()
 # DR.create_dataset()
 # DR.interpolation()
