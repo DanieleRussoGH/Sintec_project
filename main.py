@@ -7,7 +7,7 @@ from scipy import stats
 from pprint import pprint
 import matplotlib.pyplot as plt
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import GridSearchCV, RepeatedKFold
+# from sklearn.model_selection import GridSearchCV, RepeatedKFold
 warnings.simplefilter("ignore")
 import scipy.fft 
 import scipy.signal
@@ -216,6 +216,7 @@ class DataRegressor(object):
 				peaks = [] 
 			
 			hr,index_hr=[],[]
+
 			if len(peaks)>1:
 				for x,y in zip(rf_diff, index_rf):
 					if x < np.mean(rf_diff)*1.4:
@@ -225,7 +226,7 @@ class DataRegressor(object):
 				# index_hr = np.array([x for x in rf_diff if x < np.mean(rf_diff)*1.4])
 			else:
 				hr = 60/rf_diff
-				index_hr = index_rf
+				index_hr = index_rf[:-1]
 
 			hr,index_hr = np.array(hr), np.array(index_hr)
 
@@ -348,9 +349,13 @@ class DataRegressor(object):
 		iter_lst = ppg.columns
 		# iter_lst = ppg.columns[:4]
 
+		pat_tmp = self.patients[19].split("'")[-2]
+		print(pat_tmp)
 		for col in iter_lst:
 			print(f'******************** Batch: {col} ********************')
-			filt = True
+			# filt = True
+
+			filt = pat_tmp in col
 			# filt = '3001023' in col
 			# filt = '3000393' not in col and 
 			patient, batch = col.split('_')
@@ -453,10 +458,11 @@ class DataRegressor(object):
 							pat_dict[patient][batch].update({'HR':[None]})
 							pat_dict[patient][batch].update({'SBP':[None]})
 							pat_dict[patient][batch].update({'DBP':[None]})
-							pat_dict[patient][batch].update({'PTT':[None]})
-							pat_dict[patient][batch].update({'HR':[None]})
-							pat_dict[patient][batch].update({'SBP':[None]})
-							pat_dict[patient][batch].update({'DBP':[None]})
+
+							pat_dict[patient][batch].update({'x_PTT':[None]})
+							pat_dict[patient][batch].update({'x_HR':[None]})
+							pat_dict[patient][batch].update({'x_SBP':[None]})
+							pat_dict[patient][batch].update({'x_DBP':[None]})
 		# print(pat_dict)
 		PAT_ITER = []
 		for patient in pat_dict.keys():
@@ -477,7 +483,10 @@ class DataRegressor(object):
 			[x_SBP.extend(pat_dict[patient][x]['x_SBP']) for x in batches]
 			[x_DBP.extend(pat_dict[patient][x]['x_DBP']) for x in batches]
 
-			print(len(PTT),len(x_PTT))
+			print('PTT:',len(PTT),len(x_PTT))
+			print('HR:',len(HR),len(x_HR))
+			print('SBP:',len(SBP),len(x_SBP))
+			print('DBP:',len(DBP),len(x_DBP))
 
 			PTT_df = pd.DataFrame({'PTT':PTT,'x_PTT':x_PTT})
 			HR_df = pd.DataFrame({'HR':HR,'x_HR':x_HR})
@@ -570,6 +579,84 @@ class DataRegressor(object):
 			y_test.plot(ax=ax)
 			plt.title(f'alpha = {alpha}')
 			plt.tight_layout()
+
+	def data_checker(self):
+		plt.close('all')
+		patient = self.patients[1].split("'")[-2]
+		print('Patient under test:',patient)
+		for i in ['DBP','SBP','HR','PTT']:
+			tmp = pd.read_csv('Dataset\\Patients\\'+i+'_'+patient+'.csv')
+			tmp['change'] = tmp[f'x_{i}'] - tmp[f'x_{i}'].shift(1)
+			interruption = list(tmp[tmp['change']<0].index)
+			interruption.append(tmp.index[-1]+1)
+			
+			st,cnt = 0,0
+			for end in interruption:
+				tmp[f'x_{i}'].iloc[st:end] += 7500*cnt
+				cnt += 1
+				st = end
+			tmp[f'x_{i}'] = tmp[f'x_{i}']/self.fs0
+			tmp.index = tmp[f'x_{i}']
+			tmp[i].plot(style='*-')
+
+			if i == 'DBP': dbp = tmp
+			if i == 'SBP': sbp = tmp
+			if i == 'HR': hr = tmp
+			if i == 'PTT': ptt = tmp
+
+		plt.legend()
+		plt.xlabel('Time [s]')
+		# plt.show()
+		time_interval,time = 15,0
+		max_time = max(sbp.index[-1],dbp.index[-1],hr.index[-1],ptt.index[-1])
+		print(max_time)
+		minimum_value_wind = 5
+
+		while time < max_time:
+			plt.close()
+			tmp_dbp,tmp_sbp,tmp_hr,tmp_ptt = dbp[time:time+time_interval],sbp[time:time+time_interval],hr[time:time+time_interval],ptt[time:time+time_interval]
+			l_dbp,l_sbp,l_hr,l_ptt = len(tmp_dbp),len(tmp_sbp),len(tmp_hr),len(tmp_ptt)
+			difference = max(l_dbp,l_sbp,l_hr,l_ptt) - min(l_dbp,l_sbp,l_hr,l_ptt)
+
+			if difference < minimum_value_wind:
+				indices = []
+				for x in tmp_dbp,tmp_sbp,tmp_hr,tmp_ptt:
+					indices.extend(x.index)
+				print(indices)
+				indices = sorted(list(dict.fromkeys(indices)))
+				# indices = [round(x,2) for x in indices]
+				df = pd.DataFrame(np.nan, index=indices, columns=['DBP','SBP','HR','PTT'])
+				df['DBP'] = tmp_dbp['DBP']
+				df['SBP'] = tmp_sbp['SBP']
+				df['HR'] = tmp_hr['HR']
+				df['PTT'] = tmp_ptt['PTT']
+				df_def = df.interpolate(method='spline',order=3).dropna()
+				print(df_def)
+				test_size = int(.75*len(df_def.index))
+
+				X_train,y_train = df_def[['HR','PTT']].iloc[0:test_size], df_def['DBP'].iloc[0:test_size]
+				X_test,y_test = df_def[['HR','PTT']].iloc[test_size::], df_def['DBP'].iloc[test_size::]
+				y_hat = self.regression(y_train,X_train,X_test)
+				plt.plot(y_train,label='train')
+				plt.plot(y_test.index,y_hat,label='prediction')
+				plt.plot(y_test,label='test')
+				plt.ylim(50,100)
+				# ax = df.plot(style='o-')
+				# df_interpolated.plot(ax=ax)
+				plt.legend()
+				plt.show()
+
+
+			# for x,y in zip([dbp,sbp,hr,ptt],['DBP','SBP','HR','PTT']):
+			# 	print(y,len(x[time:time+time_interval]))
+			time = time+time_interval
+
+	def regression(self,y_train,X_train,X_test):
+		clf = Ridge(alpha=1.0)
+		clf.fit(X_train, y_train)
+		pred = clf.predict(X_test)
+		return pred
+
 
 	def plot(self, objs, labs, xlab, ylab, title):
 		plt.close('all')
@@ -725,6 +812,9 @@ class DataRegressor(object):
 DR = DataRegressor()
 # DR.create_dataset()
 # DR.interpolation()
-DR.SBP_DBP_values()
+# DR.SBP_DBP_values()
+DR.data_checker()
+
+
 # DR.BP_retrival()
 # DR.standardize()
