@@ -9,4 +9,4 @@ Code still not running due to problems in reading _3002511_12_ (probably related
 
 - [x] DBP/SBP/R_peaks/SP_peaks extraction;
 - [x] PTT extraction;
-- [ ] Regression;
+- [x] Regression;
