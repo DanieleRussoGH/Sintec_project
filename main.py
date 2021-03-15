@@ -7,6 +7,7 @@ from scipy import stats
 from pprint import pprint
 import matplotlib.pyplot as plt
 from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error
 # from sklearn.model_selection import GridSearchCV, RepeatedKFold
 warnings.simplefilter("ignore")
 import scipy.fft 
@@ -580,9 +581,9 @@ class DataRegressor(object):
 			plt.title(f'alpha = {alpha}')
 			plt.tight_layout()
 
-	def data_checker(self):
+	def data_checker(self, pat_n):
 		plt.close('all')
-		patient = self.patients[1].split("'")[-2]
+		patient = self.patients[pat_n].split("'")[-2]
 		print('Patient under test:',patient)
 		for i in ['DBP','SBP','HR','PTT']:
 			tmp = pd.read_csv('Dataset\\Patients\\'+i+'_'+patient+'.csv')
@@ -607,10 +608,13 @@ class DataRegressor(object):
 		plt.legend()
 		plt.xlabel('Time [s]')
 		# plt.show()
-		time_interval,time = 15,0
+		# plt.show()
+		#TODO: plot in a better way
+		time_interval,time = 10,0
+		TEST_PERC = .7
 		max_time = max(sbp.index[-1],dbp.index[-1],hr.index[-1],ptt.index[-1])
 		print(max_time)
-		minimum_value_wind = 5
+		minimum_value_wind = 3
 
 		while time < max_time:
 			plt.close()
@@ -618,41 +622,82 @@ class DataRegressor(object):
 			l_dbp,l_sbp,l_hr,l_ptt = len(tmp_dbp),len(tmp_sbp),len(tmp_hr),len(tmp_ptt)
 			difference = max(l_dbp,l_sbp,l_hr,l_ptt) - min(l_dbp,l_sbp,l_hr,l_ptt)
 
+			#consider interval if available data > threshold
 			if difference < minimum_value_wind:
 				indices = []
 				for x in tmp_dbp,tmp_sbp,tmp_hr,tmp_ptt:
 					indices.extend(x.index)
-				print(indices)
-				indices = sorted(list(dict.fromkeys(indices)))
-				# indices = [round(x,2) for x in indices]
+				indices = sorted(list(dict.fromkeys(indices))) #eliminate duplicate
 				df = pd.DataFrame(np.nan, index=indices, columns=['DBP','SBP','HR','PTT'])
 				df['DBP'] = tmp_dbp['DBP']
 				df['SBP'] = tmp_sbp['SBP']
 				df['HR'] = tmp_hr['HR']
 				df['PTT'] = tmp_ptt['PTT']
-				df_def = df.interpolate(method='spline',order=3).dropna()
-				print(df_def)
-				test_size = int(.75*len(df_def.index))
+				df_def = df.interpolate(method='spline',order=1).dropna()
+				# print(df_def)
+				test_size = int(TEST_PERC*len(df_def.index))
+				fig, axs = plt.subplots(3,1)
+				fig.set_size_inches((16,9))
 
-				X_train,y_train = df_def[['HR','PTT']].iloc[0:test_size], df_def['DBP'].iloc[0:test_size]
-				X_test,y_test = df_def[['HR','PTT']].iloc[test_size::], df_def['DBP'].iloc[test_size::]
-				y_hat = self.regression(y_train,X_train,X_test)
-				plt.plot(y_train,label='train')
-				plt.plot(y_test.index,y_hat,label='prediction')
-				plt.plot(y_test,label='test')
-				plt.ylim(50,100)
+				#DBP Prediction
+				X_train_dbp,y_train_dbp = df_def[['HR','PTT']].iloc[0:test_size], df_def['DBP'].iloc[0:test_size]
+				X_test_dbp,y_test_dbp = df_def[['HR','PTT']].iloc[test_size::], df_def['DBP'].iloc[test_size::]
+				#SBP Prediction
+				X_train_sbp,y_train_sbp = df_def[['HR','PTT']].iloc[0:test_size], df_def['SBP'].iloc[0:test_size]
+				X_test_sbp,y_test_sbp = df_def[['HR','PTT']].iloc[test_size::], df_def['SBP'].iloc[test_size::]
+				
+				axs[0].plot(y_train_dbp,label='train')
+				axs[1].plot(y_train_sbp,label='train')
+
+				maes_dbp, maes_sbp = [],[]
+				alphas = [.5, 1, 2, 5, 10, 100, 1000, 10000]
+
+				for alpha in alphas:
+					y_hat_dbp = self.regression(y_train_dbp,X_train_dbp,X_test_dbp, alpha)
+					axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
+					MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+					maes_dbp.append(MAE_dbp)
+
+					y_hat_sbp = self.regression(y_train_sbp,X_train_sbp,X_test_sbp, alpha)
+					axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
+					MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+					maes_sbp.append(MAE_sbp)
+				
+				width = 0.35 
+				axis = np.arange(len(maes_dbp))
+				axs[2].bar(axis+width/2,maes_dbp,width,label='DBP')
+				axs[2].bar(axis-width/2,maes_sbp,width,label='SBP')
+				axs[2].set_title('Alpha')
+				axs[2].set_xticks(range(len(alphas)))
+				axs[2].set_xticklabels((alphas))
+				axs[2].set_ylabel('MAE [-]')
+				axs[2].legend()
+
+				axs[0].plot(y_test_dbp,label='test')
+				axs[0].set_ylabel('DBP [mmHg]')
+				axs[0].set_xlabel('Time [s]')
+				axs[0].set_title('Prediction vs. Test')
+				axs[0].set_ylim(min(y_test_dbp)-10,max(y_test_dbp)+10)
+				axs[0].legend(ncol=3)
+
+				axs[1].plot(y_test_sbp,label='test')
+				axs[1].set_ylabel('SBP [mmHg]')
+				axs[1].set_xlabel('Time [s]')
+				axs[1].set_ylim(min(y_test_sbp)-10,max(y_test_sbp)+10)
+				axs[1].legend(ncol=3)
+				# plt.title(f'Alpha = {alpha}')
 				# ax = df.plot(style='o-')
 				# df_interpolated.plot(ax=ax)
-				plt.legend()
-				plt.show()
+				# plt.legend()
+				plt.tight_layout()
+				self.create_path('Plots\\Regression')
+				plt.savefig(f'Plots\\Regression\\{patient}_{round(time,1)}.png')
 
-
-			# for x,y in zip([dbp,sbp,hr,ptt],['DBP','SBP','HR','PTT']):
-			# 	print(y,len(x[time:time+time_interval]))
 			time = time+time_interval
 
-	def regression(self,y_train,X_train,X_test):
-		clf = Ridge(alpha=1.0)
+
+	def regression(self,y_train,X_train,X_test, alpha=1.0):
+		clf = Ridge(alpha=alpha)
 		clf.fit(X_train, y_train)
 		pred = clf.predict(X_test)
 		return pred
@@ -813,7 +858,12 @@ DR = DataRegressor()
 # DR.create_dataset()
 # DR.interpolation()
 # DR.SBP_DBP_values()
-DR.data_checker()
+
+for pat_number in range(0,20):
+	try:
+		DR.data_checker(pat_number)
+	except:
+		pass
 
 
 # DR.BP_retrival()
