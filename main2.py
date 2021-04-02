@@ -286,18 +286,34 @@ class SintecProj(object):
 	def regression_process(self):
 		from sklearn.preprocessing import PolynomialFeatures
 		from sklearn.linear_model import LinearRegression
+		from sklearn.ensemble import RandomForestRegressor
+		from sklearn.datasets import make_regression
+		from filterpy.kalman import KalmanFilter
 
 		TEST_PERC = .75
 		regr_path = 'Dataset\\Regression'
 		for file in os.listdir(regr_path):
 			patient = file.split('.')[0]
+
+			fig, axs = plt.subplots(2,1)
+			fig.set_size_inches((16,9))
+
 			df = pd.read_csv(regr_path+'\\'+file).set_index('Time')
 			df = df.dropna(how='all')
-			ax = df.plot(style='o')
-			df = df.interpolate(method='spline',order=2).dropna()
-			df.plot(ax=ax)
+			df[['HR','SBP','DBP']].plot(style='o', ax=axs[0])
+			df[['PTT']].plot(style='o', ax=axs[1])
+			df[['HR','SBP','DBP']] = df[['HR','SBP','DBP']].interpolate(method='polynomial',order=3)
+			df['PTT'] = df['PTT'].interpolate(method='polynomial',order=1)
+			old_len = len(df) 
+			df = df.dropna()
+			print(f'Percentage of data removed from "dropna": {len(df)/old_len*100} [%]')
+			df[['HR','SBP','DBP']].plot(ax=axs[0],style='*')
+			df[['PTT']].plot(ax=axs[1],style='*')
+			plt.tight_layout()
+			self.create_path('Plots\\interpolation')
+			plt.savefig(f'Plots\\interpolation\\{patient}.png')
+			# plt.show()
 			plt.close()
-			print(df)
 
 			test_size = int(TEST_PERC*len(df.index))
 			fig, axs = plt.subplots(3,1)
@@ -305,15 +321,19 @@ class SintecProj(object):
 
 			#DBP Prediction
 			X_train_dbp,y_train_dbp = df[['HR','PTT']].iloc[0:test_size], df['DBP'].iloc[0:test_size]
-			print(X_train_dbp)
 			X_test_dbp,y_test_dbp = df[['HR','PTT']].iloc[test_size::], df['DBP'].iloc[test_size::]
 			#SBP Prediction
 			X_train_sbp,y_train_sbp = df[['HR','PTT']].iloc[0:test_size], df['SBP'].iloc[0:test_size]
 			X_test_sbp,y_test_sbp = df[['HR','PTT']].iloc[test_size::], df['SBP'].iloc[test_size::]
 			
+			# axs[0].plot(X_train_dbp['HR'],'o')
+			# axs[1].plot(X_train_dbp['PTT'],'o')
+			# axs[2].plot(y_train_dbp,'o')
+			# # plt.show()
 			axs[0].plot(y_train_dbp,label='train')
 			axs[1].plot(y_train_sbp,label='train')
 			maes_dbp, maes_sbp = [],[]
+			x_labs = []
 
 			#Polynomial regression
 			# pol_orders = [1,2,3,4]
@@ -337,67 +357,121 @@ class SintecProj(object):
 			# 	maes_sbp.append(MAE_sbp)
 			# 	axs[1].plot(y_test_sbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
 
+			#====================================================================================
 			#Support Vector Regression
-			pol_orders = []
-			Cs = [1,50,1000]
-			for c in Cs:
-				regr = SVR(C=c, epsilon=0.2)
-				regr.fit(X_train_dbp, y_train_dbp)
-				y_hat_dbp = regr.predict(X_test_dbp)
-				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
-				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-				maes_dbp.append(MAE_dbp)
+			# pol_orders = []
+			# Cs = [1,50,1000]
+			# for c in Cs:
+			# 	regr = SVR(C=c, epsilon=0.2)
+			# 	regr.fit(X_train_dbp, y_train_dbp)
+			# 	y_hat_dbp = regr.predict(X_test_dbp)
+			# 	axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
+			# 	MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+			# 	maes_dbp.append(MAE_dbp)
 
-				regr = SVR(C=c, epsilon=1)
-				regr.fit(X_train_sbp, y_train_sbp)
-				y_hat_sbp = regr.predict(X_test_sbp)
-				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
-				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-				maes_sbp.append(MAE_sbp)
+			# 	regr = SVR(C=c, epsilon=.2)
+			# 	regr.fit(X_train_sbp, y_train_sbp)
+			# 	y_hat_sbp = regr.predict(X_test_sbp)
+			# 	axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
+			# 	MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+			# 	maes_sbp.append(MAE_sbp)
 
-			#grid search SVR
-			parameters = {'kernel':('linear', 'rbf'), 'epsilon':np.linspace(.1,5,5), 'C':np.linspace(.1,1000,10)}
-			svr = SVR()
-			clf = GridSearchCV(svr, parameters)
-			clf.fit(X_train_dbp, y_train_dbp)
-			y_hat_dbp = clf.predict(X_test_dbp)
-			axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR: Best')
-			print(f'Best for DBP: {clf.best_params_}')
-			MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-			maes_dbp.append(MAE_dbp)
+			#====================================================================================
+			# #grid search SVR
+			# parameters = {'kernel':('linear', 'rbf'), 'epsilon':np.linspace(.1,5,5), 'C':np.linspace(.1,1000,10)}
+			# svr = SVR()
+			# clf = GridSearchCV(svr, parameters)
+			# clf.fit(X_train_dbp, y_train_dbp)
+			# y_hat_dbp = clf.predict(X_test_dbp)
+			# axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR: Best')
+			# print(f'Best for DBP: {clf.best_params_}')
+			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+			# maes_dbp.append(MAE_dbp)
+			# clf = GridSearchCV(svr, parameters)
+			# clf.fit(X_train_sbp, y_train_sbp)
+			# print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+			# y_hat_sbp = clf.predict(X_test_sbp)
+			# print(f'Best for SBP: {clf.best_params_}')
+			# axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR: Best')
+			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+			# maes_sbp.append(MAE_sbp)
 
-			clf = GridSearchCV(svr, parameters)
-			clf.fit(X_train_sbp, y_train_sbp)
-			y_hat_sbp = clf.predict(X_test_sbp)
-			print(f'Best for SBP: {clf.best_params_}')
-			axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR: Best')
-			MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-			maes_sbp.append(MAE_sbp)
-
+			#====================================================================================
 			#Ridge Regression
 			alphas = [.01, 10, 100, 10000]
+			[x_labs.append(f'RIDGE: {x}') for x in alphas]
 			for alpha in alphas:
-				y_hat_dbp = self.regression(y_train_dbp,X_train_dbp,X_test_dbp, alpha)
+				clf = Ridge(alpha=alpha)
+				y_hat_dbp = self.regression(clf,y_train_dbp,X_train_dbp,X_test_dbp)
 				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 				maes_dbp.append(MAE_dbp)
 
-				y_hat_sbp = self.regression(y_train_sbp,X_train_sbp,X_test_sbp, alpha)
+				y_hat_sbp = self.regression(clf,y_train_sbp,X_train_sbp,X_test_sbp)
 				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
 
+			#Grid search for Ridge
+			params = {'alpha':np.linspace(.01,1000,100)}
+			y_hat_dbp = self.GS_regression(Ridge(),params,y_train_dbp,X_train_dbp,X_test_dbp)
+			axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
+			MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+			maes_dbp.append(MAE_dbp)
+			y_hat_sbp = self.GS_regression(Ridge(),params,y_train_sbp,X_train_sbp,X_test_sbp)
+			axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
+			MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+			maes_sbp.append(MAE_sbp)
+			x_labs.append('Ridge Optimized')
 			
+			#====================================================================================
+			#Random Forrest
+			nTrees=[5,10,100]
+			[x_labs.append(f'Trees: {x}') for x in nTrees]
+			for trees in nTrees:
+				regr=RandomForestRegressor(n_estimators=trees,random_state=7,criterion='mae')
+				y_hat_dbp = self.regression(regr,y_train_dbp,X_train_dbp,X_test_dbp)				
+				# y_hat_dbp = regr.predict(X_test_dbp)
+				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'tree = {trees}')
+				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				maes_dbp.append(MAE_dbp)
+				
+				regr.fit(X_train_sbp, y_train_sbp)
+				y_hat_sbp = self.regression(regr,y_train_sbp,X_train_sbp,X_test_sbp)
+				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'tree = {trees}')
+				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				maes_sbp.append(MAE_sbp)
+
+			#Grid search for RF
+			# params = {
+			# 	# 'bootstrap': [True],
+			# 	'max_depth': [80, 90, 100, 110],
+			# 	# 'max_features': [2, 3],
+			# 	# 'min_samples_leaf': [3, 4, 5],
+			# 	# 'min_samples_split': [8, 10, 12],
+			# 	'n_estimators': [100, 200, 300, 1000]} 
+			# y_hat_dbp = self.GS_regression(RandomForestRegressor(criterion='mae'),params,y_train_dbp,X_train_dbp,X_test_dbp)
+			# axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
+			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+			# maes_dbp.append(MAE_dbp)
+			# y_hat_sbp = self.GS_regression(RandomForestRegressor(criterion='mae'),params,y_train_sbp,X_train_sbp,X_test_sbp)
+			# axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
+			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+			# maes_sbp.append(MAE_sbp)
+			# x_labs.append('RF Optimized')
+			#====================================================================================
+			#Kalman Filter
+			f = KalmanFilter (dim_x=2, dim_z=1)
+
 			width = 0.35 
 			axis = np.arange(len(maes_dbp))
 			axs[2].bar(axis+width/2,maes_dbp,width,label='DBP')
 			axs[2].bar(axis-width/2,maes_sbp,width,label='SBP')
-			axs[2].set_ylim(0,10)
+			axs[2].set_ylim(0,15)
 			axs[2].set_title('MAEs')
-			x_labs = [f'POL: {x}' for x in pol_orders]
-			[x_labs.append(f'SVR: {x}') for x in Cs]
-			x_labs.append('SVR: Best')
-			[x_labs.append(f'RIDGE: {x}') for x in alphas]
+			# x_labs = [f'POL: {x}' for x in pol_orders]
+			# [x_labs.append(f'SVR: {x}') for x in Cs]
+			# x_labs.append('SVR: Best')
 			axs[2].set_xticks(range(len(x_labs)))
 			axs[2].set_xticklabels((x_labs))
 			axs[2].set_ylabel('MAE [-]')
@@ -420,15 +494,28 @@ class SintecProj(object):
 			# df_interpolated.plot(ax=ax)
 			# plt.legend()
 			plt.tight_layout()
-			# plt.show()
 			self.create_path('Plots\\Regression')
 			plt.savefig(f'Plots\\Regression\\{patient}.png')
+			# plt.show()
 
-	def regression(self,y_train,X_train,X_test, alpha):
-		clf = Ridge(alpha=alpha)
+	def regression(self,clf,y_train,X_train,X_test):
+		from sklearn.preprocessing import RobustScaler
+		scaler_x = RobustScaler()
+		# scaler_y = StandardScaler()
+		# print(y_train)
+		X_train = (scaler_x.fit_transform(X_train))
+		# y_train = scaler_y.fit_transform(np.array(y_train).reshape(1,-1))
+		# print(y_train)
 		clf.fit(X_train, y_train)
-		pred = clf.predict(X_test)
+		pred = clf.predict(scaler_x.transform(X_test))
+		# pred = scaler_y.inverse_transform(np.array(pred).reshape(1,-1))
 		return pred
+	
+	def GS_regression(self,clf,params,y_train,X_train,X_test):
+		clf = GridSearchCV(clf, params)
+		clf.fit(X_train,y_train)
+		pred_gs = clf.predict(X_test)
+		return pred_gs
 
 SP = SintecProj()
 # SP.data_reader()
