@@ -288,7 +288,7 @@ class SintecProj(object):
 		from sklearn.linear_model import LinearRegression
 		from sklearn.ensemble import RandomForestRegressor
 		from sklearn.datasets import make_regression
-		from filterpy.kalman import KalmanFilter
+		# from filterpy.kalman import KalmanFilter
 
 		TEST_PERC = .75
 		regr_path = 'Dataset\\Regression'
@@ -318,7 +318,13 @@ class SintecProj(object):
 			test_size = int(TEST_PERC*len(df.index))
 			fig, axs = plt.subplots(3,1)
 			fig.set_size_inches((16,9))
-
+			
+			print(df)
+			for x in ['HR','PTT']:
+				for y in range(2):
+					df[f'{x}-{y}'] = df[x].shift(y)
+			print(df)
+			exit()
 			#DBP Prediction
 			X_train_dbp,y_train_dbp = df[['HR','PTT']].iloc[0:test_size], df['DBP'].iloc[0:test_size]
 			X_test_dbp,y_test_dbp = df[['HR','PTT']].iloc[test_size::], df['DBP'].iloc[test_size::]
@@ -335,6 +341,7 @@ class SintecProj(object):
 			maes_dbp, maes_sbp = [],[]
 			x_labs = []
 
+			"""
 			#Polynomial regression
 			# pol_orders = [1,2,3,4]
 			# for order in pol_orders:
@@ -462,6 +469,7 @@ class SintecProj(object):
 			#====================================================================================
 			#Kalman Filter
 			f = KalmanFilter (dim_x=2, dim_z=1)
+			"""
 
 			width = 0.35 
 			axis = np.arange(len(maes_dbp))
