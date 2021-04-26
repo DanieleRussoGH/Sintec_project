@@ -315,22 +315,43 @@ class SintecProj(object):
 			# plt.show()
 			plt.close()
 
-			test_size = int(TEST_PERC*len(df.index))
+			
 			fig, axs = plt.subplots(3,1)
 			fig.set_size_inches((16,9))
 			
 			print(df)
-			for x in ['HR','PTT']:
-				for y in range(2):
-					df[f'{x}-{y}'] = df[x].shift(y)
-			print(df)
-			exit()
-			#DBP Prediction
-			X_train_dbp,y_train_dbp = df[['HR','PTT']].iloc[0:test_size], df['DBP'].iloc[0:test_size]
-			X_test_dbp,y_test_dbp = df[['HR','PTT']].iloc[test_size::], df['DBP'].iloc[test_size::]
+			train_cols = ['HR','PTT']
+		
+			for x in train_cols:
+				for y in range(1,10):
+					df[f'{x}-{y}']=df[x].shift(y)
+			df=df.dropna()
+			df['ones'] = np.ones(len(df))
+			
+			train_cols = ['HR','PTT','ones']
+			for x in range(1,10):
+				train_cols.append(f'HR-{x}')
+				train_cols.append(f'PTT-{x}')
+			final_cols = df.columns
+			f = scipy.signal.resample(df, 550)
+			beg,end = df.index[0],df.index[-1]
+			xnew = np.linspace(beg,end, 550, endpoint=True)
+			df = pd.DataFrame(f)
+			df.index = xnew
+
+			x_final = np.arange(5, 60,.1)
+			tmp_df = pd.DataFrame(np.nan, index=x_final, columns=df.columns)
+			df = df.append(tmp_df)
+			df = df.sort_index().interpolate(method='polynomial',order=3)
+			df = df.loc[x_final].dropna()
+			df.columns = final_cols
+			#DBP Prediction	
+			test_size = int(TEST_PERC*len(df.index))
+			X_train_dbp,y_train_dbp = df[train_cols].iloc[0:test_size], df['DBP'].iloc[0:test_size]
+			X_test_dbp,y_test_dbp = df[train_cols].iloc[test_size::], df['DBP'].iloc[test_size::]
 			#SBP Prediction
-			X_train_sbp,y_train_sbp = df[['HR','PTT']].iloc[0:test_size], df['SBP'].iloc[0:test_size]
-			X_test_sbp,y_test_sbp = df[['HR','PTT']].iloc[test_size::], df['SBP'].iloc[test_size::]
+			X_train_sbp,y_train_sbp = df[train_cols].iloc[0:test_size], df['SBP'].iloc[0:test_size]
+			X_test_sbp,y_test_sbp = df[train_cols].iloc[test_size::], df['SBP'].iloc[test_size::]
 			
 			# axs[0].plot(X_train_dbp['HR'],'o')
 			# axs[1].plot(X_train_dbp['PTT'],'o')
@@ -342,7 +363,61 @@ class SintecProj(object):
 			x_labs = []
 
 			"""
-			#Polynomial regression
+			# ====================================================================================
+			# Support Vector Regression
+			pol_orders = []
+			Cs = [1,50,1000]
+			for c in Cs:
+				regr = SVR(C=c, epsilon=0.2)
+				regr.fit(X_train_dbp, y_train_dbp)
+				y_hat_dbp = regr.predict(X_test_dbp)
+				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
+				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				maes_dbp.append(MAE_dbp)
+
+				regr = SVR(C=c, epsilon=.2)
+				regr.fit(X_train_sbp, y_train_sbp)
+				y_hat_sbp = regr.predict(X_test_sbp)
+				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
+				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				maes_sbp.append(MAE_sbp)
+			# ====================================================================================
+			# Support Vector Regression
+			pol_orders = []
+			Cs = [1,50,1000]
+			for c in Cs:
+				regr = SVR(C=c, epsilon=0.2)
+				regr.fit(X_train_dbp, y_train_dbp)
+				y_hat_dbp = regr.predict(X_test_dbp)
+				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
+				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				maes_dbp.append(MAE_dbp)
+
+				regr = SVR(C=c, epsilon=.2)
+				regr.fit(X_train_sbp, y_train_sbp)
+				y_hat_sbp = regr.predict(X_test_sbp)
+				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
+				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				maes_sbp.append(MAE_sbp)
+
+			#====================================================================================
+			#Ridge Regression
+			alphas = [.01, 10, 100, 10000]
+			[x_labs.append(f'RIDGE: {x}') for x in alphas]
+			for alpha in alphas:
+				clf = Ridge(alpha=alpha)
+				y_hat_dbp = self.regression(clf,y_train_dbp,X_train_dbp,X_test_dbp)
+				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
+				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				maes_dbp.append(MAE_dbp)
+
+				y_hat_sbp = self.regression(clf,y_train_sbp,X_train_sbp,X_test_sbp)
+				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
+				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				maes_sbp.append(MAE_sbp)
+			"""
+			# ====================================================================================
+			# Polynomial regression - smt wrong
 			# pol_orders = [1,2,3,4]
 			# for order in pol_orders:
 			# 	polynomial_features= PolynomialFeatures(degree=order)
@@ -355,7 +430,6 @@ class SintecProj(object):
 			# 	maes_dbp.append(MAE_dbp)
 			# 	axs[0].plot(y_test_dbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
 
-
 			# 	x_poly_sbp = polynomial_features.fit_transform(X_train_sbp)
 			# 	model_sbp = LinearRegression()
 			# 	model_sbp.fit(x_poly_sbp, y_train_sbp)
@@ -364,26 +438,7 @@ class SintecProj(object):
 			# 	maes_sbp.append(MAE_sbp)
 			# 	axs[1].plot(y_test_sbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
 
-			#====================================================================================
-			#Support Vector Regression
-			# pol_orders = []
-			# Cs = [1,50,1000]
-			# for c in Cs:
-			# 	regr = SVR(C=c, epsilon=0.2)
-			# 	regr.fit(X_train_dbp, y_train_dbp)
-			# 	y_hat_dbp = regr.predict(X_test_dbp)
-			# 	axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
-			# 	MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-			# 	maes_dbp.append(MAE_dbp)
-
-			# 	regr = SVR(C=c, epsilon=.2)
-			# 	regr.fit(X_train_sbp, y_train_sbp)
-			# 	y_hat_sbp = regr.predict(X_test_sbp)
-			# 	axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
-			# 	MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-			# 	maes_sbp.append(MAE_sbp)
-
-			#====================================================================================
+			# ====================================================================================
 			# #grid search SVR
 			# parameters = {'kernel':('linear', 'rbf'), 'epsilon':np.linspace(.1,5,5), 'C':np.linspace(.1,1000,10)}
 			# svr = SVR()
@@ -403,33 +458,19 @@ class SintecProj(object):
 			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 			# maes_sbp.append(MAE_sbp)
 
+
 			#====================================================================================
-			#Ridge Regression
-			alphas = [.01, 10, 100, 10000]
-			[x_labs.append(f'RIDGE: {x}') for x in alphas]
-			for alpha in alphas:
-				clf = Ridge(alpha=alpha)
-				y_hat_dbp = self.regression(clf,y_train_dbp,X_train_dbp,X_test_dbp)
-				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
-				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-				maes_dbp.append(MAE_dbp)
-
-				y_hat_sbp = self.regression(clf,y_train_sbp,X_train_sbp,X_test_sbp)
-				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
-				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-				maes_sbp.append(MAE_sbp)
-
-			#Grid search for Ridge
-			params = {'alpha':np.linspace(.01,1000,100)}
-			y_hat_dbp = self.GS_regression(Ridge(),params,y_train_dbp,X_train_dbp,X_test_dbp)
-			axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
-			MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-			maes_dbp.append(MAE_dbp)
-			y_hat_sbp = self.GS_regression(Ridge(),params,y_train_sbp,X_train_sbp,X_test_sbp)
-			axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
-			MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-			maes_sbp.append(MAE_sbp)
-			x_labs.append('Ridge Optimized')
+			# #Grid search for Ridge
+			# params = {'alpha':np.linspace(.01,1000,100)}
+			# y_hat_dbp = self.GS_regression(Ridge(),params,y_train_dbp,X_train_dbp,X_test_dbp)
+			# axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
+			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+			# maes_dbp.append(MAE_dbp)
+			# y_hat_sbp = self.GS_regression(Ridge(),params,y_train_sbp,X_train_sbp,X_test_sbp)
+			# axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
+			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+			# maes_sbp.append(MAE_sbp)
+			# x_labs.append('Ridge Optimized')
 			
 			#====================================================================================
 			#Random Forrest
@@ -467,9 +508,6 @@ class SintecProj(object):
 			# maes_sbp.append(MAE_sbp)
 			# x_labs.append('RF Optimized')
 			#====================================================================================
-			#Kalman Filter
-			f = KalmanFilter (dim_x=2, dim_z=1)
-			"""
 
 			width = 0.35 
 			axis = np.arange(len(maes_dbp))
