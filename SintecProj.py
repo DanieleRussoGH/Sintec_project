@@ -21,13 +21,14 @@ class SintecProj(object):
 		self.patient_path = str(os.getcwd())+'\\Patients'
 		self.dataset_path = str(os.getcwd())+'\\Dataset'
 		self.plot_setup()
-		self.signal_list = ['3400715','3402408','3402291','3600293','3601140','3403232','3602237','3602666',#ok
-							'3600376','3600490','3600620','3601272','3403274','3604404','3604430','3604660',#ok
-							'3604404','3604430','3604660','3605744','3606315','3603256','3604217','3607634',#ok
-							'3608436','3608706','3609155','3609182','3609463','3606882','3606909','3607464',#ok
-							'3609839','3609868','3607711',#ok
-							'3602521','3602766','3602772','3603658','3604352', #maybe
-							'3605724','3606319','3606358','3606901','3607077'] #maybe
+		self.signal_list = [
+			'3400715','3402408','3402291','3600293','3601140','3403232','3602237','3602666',#ok
+			'3600376','3600490','3600620','3601272','3403274','3604404','3604430','3604660',#ok
+			'3604404','3604430','3604660','3605744','3606315','3603256','3604217','3607634',#ok
+			'3608436','3608706','3609155','3609182','3609463','3606882','3606909','3607464',#ok
+			'3609839','3609868','3607711',#ok
+			'3602521','3602766','3602772','3603658','3604352', #maybe
+			'3605724','3606319','3606358','3606901','3607077'] #maybe
 
 	def create_path(self, path):
 		if not os.path.exists(path):
@@ -92,10 +93,12 @@ class SintecProj(object):
 	def peak_finder(self):
 		self.create_path('Plots\\Peaks')
 		tmp_path = self.plot_path+'\\Peaks'
-		for file in os.listdir(self.dataset_path):
+		file_lst = [x for x in os.listdir(self.dataset_path) if x != 'Regression']
+
+		for file in file_lst:
 			patient = file.split('.')[0]
-			print()
 			print(f'Patient: {patient}')
+			print()
 			df = pd.read_csv(f'{self.dataset_path}\\{file}').dropna()
 			df.index = range(0,len(df))
 			
@@ -198,8 +201,7 @@ class SintecProj(object):
 			regr_path = self.dataset_path+'\\Regression'
 			self.create_path(regr_path)
 			dataset.to_csv(f'{regr_path}\\{patient}.csv')
-		plt.style.use('seaborn-darkgrid')
-
+		
 
 	def gaussian_distributions(self,curve,peaks):
 		x = np.arange(min(curve),max(curve),.001)
@@ -236,6 +238,7 @@ class SintecProj(object):
 		return SP, curves
 
 	def find_PTT(self,ECG,ECG_peaks,PPG,PPG_peaks,patient):
+		plt.style.use('seaborn-darkgrid')
 		self.create_path('Plots\\HR and PTT')
 		tmp_path = self.plot_path+'\\HR and PTT'
 		#ECG_peaks,PPG_peaks: vectors containig indices of peaks 
@@ -323,65 +326,86 @@ class SintecProj(object):
 		from sklearn.datasets import make_regression
 		# from filterpy.kalman import KalmanFilter
 
-		TEST_PERC = .75
+		TRAIN_PERC = .75
 		regr_path = 'Dataset\\Regression'
 		for file in os.listdir(regr_path):
 			patient = file.split('.')[0]
 
-			fig, axs = plt.subplots(2,1)
+			fig, axs = plt.subplots(2,1,sharex=True)
 			fig.set_size_inches((16,9))
 
 			df = pd.read_csv(regr_path+'\\'+file).set_index('Time')
 			df = df.dropna(how='all')
+			x_final = np.arange(0, 60,.1)
+			for i in x_final:
+				try:
+					df.loc[i]
+				except:
+					df.loc[i] = [np.nan,np.nan,np.nan,np.nan]
+			df = df.sort_values(by='Time')
+
 			df[['HR','SBP','DBP']].plot(style='o', ax=axs[0])
 			df[['PTT']].plot(style='o', ax=axs[1])
 			df[['HR','SBP','DBP']] = df[['HR','SBP','DBP']].interpolate(method='polynomial',order=3)
 			df['PTT'] = df['PTT'].interpolate(method='polynomial',order=1)
-			old_len = len(df) 
-			df = df.dropna()
-			print(f'Percentage of data removed from "dropna": {len(df)/old_len*100} [%]')
-			df[['HR','SBP','DBP']].plot(ax=axs[0],style='*')
-			df[['PTT']].plot(ax=axs[1],style='*')
+			
+			df = df.loc[x_final].dropna()
+			print(df)
+			[axs[0].plot(df[x],'*',alpha=.4,label=y) for x,y in zip(['HR','SBP','DBP'],['HR - resampled','SBP - resampled','DBP - resampled'])]
+			axs[1].plot(df['PTT'],'*',alpha=.4,label='PTT - resampled')
+			[axs[i].legend() for i in range(2)]
+			axs[1].set_xlabel('Time [s]')
+
 			plt.tight_layout()
 			self.create_path('Plots\\interpolation')
 			plt.savefig(f'Plots\\interpolation\\{patient}.png')
 			# plt.show()
 			plt.close()
-
 			
-			fig, axs = plt.subplots(3,1)
+			#REGRESSION
+			fig, axs = plt.subplots(4,1)
 			fig.set_size_inches((16,9))
 			
-			print(df)
 			train_cols = ['HR','PTT']
-		
+			axs[0].set_ylabel('HR [mmHg]', color='tab:red')
+			axs[0].plot(df['HR'],c='tab:red')
+			axs[0].tick_params(axis='y', labelcolor='tab:red')
+			axs_b = axs[0].twinx()
+			axs_b.set_ylabel('PTT', color='tab:blue')
+			axs_b.plot(df['PTT'],c='tab:blue')
+			axs_b.tick_params(axis='y', labelcolor='tab:blue')
+			[x.grid() for x in [axs[0], axs_b]]
+
+			PREV_VAL = 10
 			for x in train_cols:
-				for y in range(1,10):
-					df[f'{x}-{y}']=df[x].shift(y)
-			df=df.dropna()
+				for y in range(1,PREV_VAL):
+					df[f'{x}-{y}'] = df[x].shift(y)
+			df = df.dropna()
 			df['ones'] = np.ones(len(df))
 			
 			train_cols = ['HR','PTT','ones']
-			for x in range(1,10):
+			for x in range(1,PREV_VAL):
 				train_cols.append(f'HR-{x}')
 				train_cols.append(f'PTT-{x}')
 			final_cols = df.columns
-			f = scipy.signal.resample(df, 550)
-			beg,end = df.index[0],df.index[-1]
-			xnew = np.linspace(beg,end, 550, endpoint=True)
-			df = pd.DataFrame(f)
-			df.index = xnew
 
-			x_final = np.arange(5, 60,.1)
-			tmp_df = pd.DataFrame(np.nan, index=x_final, columns=df.columns)
-			df = df.append(tmp_df)
-			df = df.sort_index().interpolate(method='polynomial',order=3)
-			df = df.loc[x_final].dropna()
-			df.columns = final_cols
+			# f = scipy.signal.resample(df, 550)
+			# beg,end = df.index[0],df.index[-1]
+			# xnew = np.linspace(beg,end, 550, endpoint=True)
+			# df = pd.DataFrame(f)
+			# df.index = xnew
+			# x_final = np.arange(5, 60,.1)
+			# tmp_df = pd.DataFrame(np.nan, index=x_final, columns=df.columns)
+			# df = df.append(tmp_df)
+			# df = df.sort_index().interpolate(method='polynomial',order=3)
+			# df = df.loc[x_final].dropna()
+			# df.columns = final_cols
+			
 			#DBP Prediction	
-			test_size = int(TEST_PERC*len(df.index))
+			test_size = int(TRAIN_PERC*len(df.index))
 			X_train_dbp,y_train_dbp = df[train_cols].iloc[0:test_size], df['DBP'].iloc[0:test_size]
 			X_test_dbp,y_test_dbp = df[train_cols].iloc[test_size::], df['DBP'].iloc[test_size::]
+
 			#SBP Prediction
 			X_train_sbp,y_train_sbp = df[train_cols].iloc[0:test_size], df['SBP'].iloc[0:test_size]
 			X_test_sbp,y_test_sbp = df[train_cols].iloc[test_size::], df['SBP'].iloc[test_size::]
@@ -390,11 +414,29 @@ class SintecProj(object):
 			# axs[1].plot(X_train_dbp['PTT'],'o')
 			# axs[2].plot(y_train_dbp,'o')
 			# # plt.show()
-			axs[0].plot(y_train_dbp,label='train')
-			axs[1].plot(y_train_sbp,label='train')
+			axs[1].plot(y_train_dbp,label='train')
+			axs[2].plot(y_train_sbp,label='train')
 			maes_dbp, maes_sbp = [],[]
 			x_labs = []
 
+			# ====================================================================================
+			# Support Vector Regression
+			Cs = [1,50,1000]
+			[x_labs.append(f'SVR: {x}') for x in Cs]
+			for c in Cs:
+				regr = SVR(C=c, epsilon=0.2)
+				regr.fit(X_train_dbp, y_train_dbp)
+				y_hat_dbp = regr.predict(X_test_dbp)
+				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
+				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				maes_dbp.append(MAE_dbp)
+
+				regr = SVR(C=c, epsilon=.2)
+				regr.fit(X_train_sbp, y_train_sbp)
+				y_hat_sbp = regr.predict(X_test_sbp)
+				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
+				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				maes_sbp.append(MAE_sbp)
 			"""
 			# ====================================================================================
 			# Support Vector Regression
@@ -404,51 +446,33 @@ class SintecProj(object):
 				regr = SVR(C=c, epsilon=0.2)
 				regr.fit(X_train_dbp, y_train_dbp)
 				y_hat_dbp = regr.predict(X_test_dbp)
-				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
+				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 				maes_dbp.append(MAE_dbp)
 
 				regr = SVR(C=c, epsilon=.2)
 				regr.fit(X_train_sbp, y_train_sbp)
 				y_hat_sbp = regr.predict(X_test_sbp)
-				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
+				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
-			# ====================================================================================
-			# Support Vector Regression
-			pol_orders = []
-			Cs = [1,50,1000]
-			for c in Cs:
-				regr = SVR(C=c, epsilon=0.2)
-				regr.fit(X_train_dbp, y_train_dbp)
-				y_hat_dbp = regr.predict(X_test_dbp)
-				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
-				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-				maes_dbp.append(MAE_dbp)
-
-				regr = SVR(C=c, epsilon=.2)
-				regr.fit(X_train_sbp, y_train_sbp)
-				y_hat_sbp = regr.predict(X_test_sbp)
-				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
-				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-				maes_sbp.append(MAE_sbp)
-
+			"""
 			#====================================================================================
 			#Ridge Regression
-			alphas = [.01, 10, 100, 10000]
-			[x_labs.append(f'RIDGE: {x}') for x in alphas]
+			alphas = [.01, 100, 10000]
+			[x_labs.append(f'RR: {x}') for x in alphas]
 			for alpha in alphas:
 				clf = Ridge(alpha=alpha)
 				y_hat_dbp = self.regression(clf,y_train_dbp,X_train_dbp,X_test_dbp)
-				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
+				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 				maes_dbp.append(MAE_dbp)
 
 				y_hat_sbp = self.regression(clf,y_train_sbp,X_train_sbp,X_test_sbp)
-				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
+				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
-			"""
+
 			# ====================================================================================
 			# Polynomial regression - smt wrong
 			# pol_orders = [1,2,3,4]
@@ -461,7 +485,7 @@ class SintecProj(object):
 			# 	y_poly_pred = model_dbp.predict(polynomial_features.fit_transform(X_test_dbp))
 			# 	MAE_dbp = round(mean_absolute_error(y_test_dbp, y_poly_pred),2)
 			# 	maes_dbp.append(MAE_dbp)
-			# 	axs[0].plot(y_test_dbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
+			# 	axs[1].plot(y_test_dbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
 
 			# 	x_poly_sbp = polynomial_features.fit_transform(X_train_sbp)
 			# 	model_sbp = LinearRegression()
@@ -469,7 +493,7 @@ class SintecProj(object):
 			# 	y_poly_pred = model_sbp.predict(polynomial_features.fit_transform(X_test_sbp))
 			# 	MAE_sbp = round(mean_absolute_error(y_test_sbp, y_poly_pred),2)
 			# 	maes_sbp.append(MAE_sbp)
-			# 	axs[1].plot(y_test_sbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
+			# 	axs[2].plot(y_test_sbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
 
 			# ====================================================================================
 			# #grid search SVR
@@ -478,7 +502,7 @@ class SintecProj(object):
 			# clf = GridSearchCV(svr, parameters)
 			# clf.fit(X_train_dbp, y_train_dbp)
 			# y_hat_dbp = clf.predict(X_test_dbp)
-			# axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR: Best')
+			# axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR: Best')
 			# print(f'Best for DBP: {clf.best_params_}')
 			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 			# maes_dbp.append(MAE_dbp)
@@ -487,7 +511,7 @@ class SintecProj(object):
 			# print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
 			# y_hat_sbp = clf.predict(X_test_sbp)
 			# print(f'Best for SBP: {clf.best_params_}')
-			# axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR: Best')
+			# axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR: Best')
 			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 			# maes_sbp.append(MAE_sbp)
 
@@ -496,11 +520,11 @@ class SintecProj(object):
 			# #Grid search for Ridge
 			# params = {'alpha':np.linspace(.01,1000,100)}
 			# y_hat_dbp = self.GS_regression(Ridge(),params,y_train_dbp,X_train_dbp,X_test_dbp)
-			# axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
+			# axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
 			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 			# maes_dbp.append(MAE_dbp)
 			# y_hat_sbp = self.GS_regression(Ridge(),params,y_train_sbp,X_train_sbp,X_test_sbp)
-			# axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
+			# axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
 			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 			# maes_sbp.append(MAE_sbp)
 			# x_labs.append('Ridge Optimized')
@@ -508,18 +532,18 @@ class SintecProj(object):
 			#====================================================================================
 			#Random Forrest
 			nTrees=[5,10,100]
-			[x_labs.append(f'Trees: {x}') for x in nTrees]
+			[x_labs.append(f'RF: {x}') for x in nTrees]
 			for trees in nTrees:
 				regr=RandomForestRegressor(n_estimators=trees,random_state=7,criterion='mae')
 				y_hat_dbp = self.regression(regr,y_train_dbp,X_train_dbp,X_test_dbp)				
 				# y_hat_dbp = regr.predict(X_test_dbp)
-				axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'tree = {trees}')
+				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'tree = {trees}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 				maes_dbp.append(MAE_dbp)
 				
 				regr.fit(X_train_sbp, y_train_sbp)
 				y_hat_sbp = self.regression(regr,y_train_sbp,X_train_sbp,X_test_sbp)
-				axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'tree = {trees}')
+				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'tree = {trees}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
 
@@ -532,42 +556,42 @@ class SintecProj(object):
 			# 	# 'min_samples_split': [8, 10, 12],
 			# 	'n_estimators': [100, 200, 300, 1000]} 
 			# y_hat_dbp = self.GS_regression(RandomForestRegressor(criterion='mae'),params,y_train_dbp,X_train_dbp,X_test_dbp)
-			# axs[0].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
+			# axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
 			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 			# maes_dbp.append(MAE_dbp)
 			# y_hat_sbp = self.GS_regression(RandomForestRegressor(criterion='mae'),params,y_train_sbp,X_train_sbp,X_test_sbp)
-			# axs[1].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
+			# axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
 			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 			# maes_sbp.append(MAE_sbp)
 			# x_labs.append('RF Optimized')
 			#====================================================================================
+			axs[0].set_title(f'Prediction vs. Test for patient {patient}')
 
 			width = 0.35 
 			axis = np.arange(len(maes_dbp))
-			axs[2].bar(axis+width/2,maes_dbp,width,label='DBP')
-			axs[2].bar(axis-width/2,maes_sbp,width,label='SBP')
-			axs[2].set_ylim(0,15)
-			axs[2].set_title('MAEs')
+			axs[3].bar(axis+width/2,maes_dbp,width,label='DBP')
+			axs[3].bar(axis-width/2,maes_sbp,width,label='SBP')
+			axs[3].set_ylim(0,15)
+			axs[3].set_title('MAEs')
 			# x_labs = [f'POL: {x}' for x in pol_orders]
 			# [x_labs.append(f'SVR: {x}') for x in Cs]
 			# x_labs.append('SVR: Best')
-			axs[2].set_xticks(range(len(x_labs)))
-			axs[2].set_xticklabels((x_labs))
-			axs[2].set_ylabel('MAE [-]')
-			axs[2].legend()
+			axs[3].set_xticks(range(len(x_labs)))
+			axs[3].set_xticklabels((x_labs))
+			axs[3].set_ylabel('MAE [-]')
+			axs[3].legend()
 
-			axs[0].plot(y_test_dbp,label='test')
-			axs[0].set_ylabel('DBP [mmHg]')
-			axs[0].set_xlabel('Time [s]')
-			axs[0].set_title('Prediction vs. Test')
-			axs[0].set_ylim(min(df['DBP'])-10,max(df['DBP'])+10)
-			axs[0].legend(ncol=3)
-
-			axs[1].plot(y_test_sbp,label='test')
-			axs[1].set_ylabel('SBP [mmHg]')
+			axs[1].plot(y_test_dbp,label='test')
+			axs[1].set_ylabel('DBP [mmHg]')
 			axs[1].set_xlabel('Time [s]')
-			axs[1].set_ylim(min(df['SBP'])-10,max(df['SBP'])+10)
+			axs[1].set_ylim(min(df['DBP'])-10,max(df['DBP'])+10)
 			axs[1].legend(ncol=3)
+
+			axs[2].plot(y_test_sbp,label='test')
+			axs[2].set_ylabel('SBP [mmHg]')
+			axs[2].set_xlabel('Time [s]')
+			axs[2].set_ylim(min(df['SBP'])-10,max(df['SBP'])+10)
+			axs[2].legend(ncol=3)
 			# plt.title(f'Alpha = {alpha}')
 			# ax = df.plot(style='o-')
 			# df_interpolated.plot(ax=ax)
