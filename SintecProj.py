@@ -22,10 +22,11 @@ class SintecProj(object):
 		self.dataset_path = str(os.getcwd())+'\\Dataset'
 		self.plot_setup()
 		self.signal_list = [
-			'3400715','3402408','3402291','3600293','3601140','3403232','3602237','3602666',#ok
+			'3400715','3402408','3402291','3600293','3403232','3602237','3602666',#ok
 			'3600376','3600490','3600620','3601272','3403274','3604404','3604430','3604660',#ok
 			'3604404','3604430','3604660','3605744','3606315','3603256','3604217','3607634',#ok
 			'3608436','3608706','3609155','3609182','3609463','3606882','3606909','3607464',#ok
+			# '3601140' #no
 			'3609839','3609868','3607711',#ok
 			'3602521','3602766','3602772','3603658','3604352', #maybe
 			'3605724','3606319','3606358','3606901','3607077'] #maybe
@@ -94,6 +95,7 @@ class SintecProj(object):
 		self.create_path('Plots\\Peaks')
 		tmp_path = self.plot_path+'\\Peaks'
 		file_lst = [x for x in os.listdir(self.dataset_path) if x != 'Regression']
+		# file_lst = [x for x in os.listdir(self.dataset_path) if '3601140' in x]
 
 		for file in file_lst:
 			patient = file.split('.')[0]
@@ -128,7 +130,7 @@ class SintecProj(object):
 			#find SP peaks
 			SPs,_ = scipy.signal.find_peaks(ppg_filt,prominence=.05,width=10)
 			SPs_new, [kde_ppg, kde_sp, x_ppg, min_] = self.PPG_peaks_cleaner(ppg_filt, SPs)
-
+			print(SPs_new)
 			if True:
 				plt.style.use('default')
 				fig, axs = plt.subplots(3,2,sharex=True)
@@ -221,16 +223,19 @@ class SintecProj(object):
 		if n_peaks == 2: 
 			# sp_idx = np.argmin(kde_sp(x_ppg)[peak_sp])
 			minimum = scipy.signal.find_peaks(-kde_sp(x_ppg)[peak_sp[0]:peak_sp[1]])
-
 			minimum = x_ppg[peak_sp[0]:peak_sp[1]][minimum[0]][0]
-			if check_plot:
-				plt.plot(x_ppg, kde_sp(x_ppg))
-				plt.plot(x_ppg[peak_sp[0]:peak_sp[1]],kde_sp(x_ppg)[peak_sp[0]:peak_sp[1]])
-				plt.plot(x_ppg[peak_sp[0]:peak_sp[1]],-kde_sp(x_ppg)[peak_sp[0]:peak_sp[1]])
-				plt.axvline(x_ppg[peak_sp[0]])
-				plt.axvline(x_ppg[peak_sp[1]])
-				plt.axvline(minimum)
-			SP = [x for x in SP if ppg[x] > minimum]
+			if minimum < .90*max(x_ppg):
+				SP = [x for x in SP if ppg[x] > minimum]
+				if check_plot:
+					plt.plot(x_ppg, kde_sp(x_ppg))
+					plt.plot(x_ppg[peak_sp[0]:peak_sp[1]],kde_sp(x_ppg)[peak_sp[0]:peak_sp[1]])
+					plt.plot(x_ppg[peak_sp[0]:peak_sp[1]],-kde_sp(x_ppg)[peak_sp[0]:peak_sp[1]])
+					plt.axvline(x_ppg[peak_sp[0]],ls='--',label='1st peak')
+					plt.axvline(x_ppg[peak_sp[1]],ls='-.',label='2nd peak')
+					plt.axvline(minimum,label='Minimum')
+					plt.legend()
+			else: minimum = None
+				
 
 		curves = [kde_ppg, kde_sp, x_ppg, minimum]
 		if check_plot: plt.show()
@@ -238,11 +243,11 @@ class SintecProj(object):
 		return SP, curves
 
 	def find_PTT(self,ECG,ECG_peaks,PPG,PPG_peaks,patient):
+		#ECG_peaks,PPG_peaks: vectors containig indices of peaks 
+		#ECG,PPG: vectors containig ECG/PPG curves 
 		plt.style.use('seaborn-darkgrid')
 		self.create_path('Plots\\HR and PTT')
 		tmp_path = self.plot_path+'\\HR and PTT'
-		#ECG_peaks,PPG_peaks: vectors containig indices of peaks 
-		#ECG,PPG: vectors containig ECG/PPG curves 
 
 		#transofrm in time series:
 		ecg_TS = np.array(ECG_peaks)/self.fs
@@ -251,8 +256,27 @@ class SintecProj(object):
 		# print(f'PPG in seconds:{ppg_TS}')
 
 		#HR evaluation:
-		HR = 60/(ecg_TS[1::] -ecg_TS[0:-1])
+		HR = 60/(ecg_TS[1::] - ecg_TS[0:-1])
 		# print(f'HR:{HR}')
+
+		plt.close('all')
+		fig, axs = plt.subplots(2,1,sharex=True)
+		fig.set_size_inches(self.figsize)
+
+		axs[0].plot(ecg_TS[1:],HR,label='Heart Rate')
+		axs[0].set_title(f'HR and SP peaks cleaning for patient: {patient}')
+		
+		#HR cleaning:
+		if np.std(HR) > 3:
+			up_bound, low_bound = np.mean(HR)+np.std(HR), np.mean(HR)-np.std(HR)
+			axs[0].axhline(np.mean(HR),c='r',lw=4, label='Mean Value')
+			axs[0].fill_between(ecg_TS[1:], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+			nan_idx = np.concatenate((np.argwhere(HR<=low_bound),np.argwhere(HR>=up_bound)))
+			HR[nan_idx] = np.nan		
+			HR = pd.DataFrame(HR).interpolate(method='polynomial',order=2)
+			axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
+		axs[0].legend()
+		axs[0].set_ylabel('HR [mmHg]')
 
 		#PTT evaluation:
 		time = np.arange(0,max(max(ECG_peaks),max(PPG_peaks)),1)
@@ -281,28 +305,13 @@ class SintecProj(object):
 		rf_diff = np.diff(time_rf)
 		ptt = time_spf - time_rf
 		# print(f'PTT: {ptt}')
-		plt.close('all')
-		fig, axs = plt.subplots(2,1,sharex=True)
-		fig.set_size_inches(self.figsize)
 
-		axs[0].plot(ecg_TS[1:],HR,label='Heart Rate')
-
-		#HR cleaning:
-		if np.std(HR) > 3:
-			up_bound, low_bound = np.mean(HR)+np.std(HR), np.mean(HR)-np.std(HR)
-			axs[0].axhline(np.mean(HR),c='r',lw=4, label='Mean Value')
-			axs[0].fill_between(ecg_TS[1:], low_bound, up_bound, alpha=0.15, color='red', lw=4)
-			nan_idx = np.concatenate((np.argwhere(HR<=low_bound),np.argwhere(HR>=up_bound)))
-			HR[nan_idx] = np.nan		
-			HR = pd.DataFrame(HR).interpolate(method='polynomial',order=2)
-			axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
-		axs[0].legend()
-
+		axs[1].set_ylabel('PTT [s]')
 		axs[1].plot(ecg_TS,ECG[ECG_peaks],'o-',label='R peaks')
 		axs[1].plot(real_time[index_rf],ECG[index_rf],'o-',label='R peaks - newly found')
 		axs[1].plot(ppg_TS,PPG[PPG_peaks],'o-',label='SP peaks')
 		axs[1].plot(real_time[index_spf],PPG[index_spf],'o-',label='SP peaks - newly found')
-		axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='red', linestyles='solid', label='ptt')
+		axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='tab:red', linestyles='solid', label='ptt')
 		axs[1].legend()
 		plt.tight_layout()
 		plt.savefig(f'{tmp_path}\\{patient}')
@@ -328,9 +337,11 @@ class SintecProj(object):
 
 		TRAIN_PERC = .75
 		regr_path = 'Dataset\\Regression'
-		for file in os.listdir(regr_path):
+		# file_lst = [x for x in os.listdir(regr_path) if '3601140' in x]
+		file_lst = os.listdir(regr_path)
+		for file in file_lst:
 			patient = file.split('.')[0]
-
+			print(f'Patient: {patient}')
 			fig, axs = plt.subplots(2,1,sharex=True)
 			fig.set_size_inches((16,9))
 
@@ -376,7 +387,7 @@ class SintecProj(object):
 			axs_b.tick_params(axis='y', labelcolor='tab:blue')
 			[x.grid() for x in [axs[0], axs_b]]
 
-			PREV_VAL = 10
+			PREV_VAL = 15
 			for x in train_cols:
 				for y in range(1,PREV_VAL):
 					df[f'{x}-{y}'] = df[x].shift(y)
@@ -421,7 +432,7 @@ class SintecProj(object):
 
 			# ====================================================================================
 			# Support Vector Regression
-			Cs = [1,50,1000]
+			Cs = [1,50]
 			[x_labs.append(f'SVR: {x}') for x in Cs]
 			for c in Cs:
 				regr = SVR(C=c, epsilon=0.2)
@@ -459,7 +470,7 @@ class SintecProj(object):
 			"""
 			#====================================================================================
 			#Ridge Regression
-			alphas = [.01, 100, 10000]
+			alphas = [.01, 100]
 			[x_labs.append(f'RR: {x}') for x in alphas]
 			for alpha in alphas:
 				clf = Ridge(alpha=alpha)
@@ -531,7 +542,7 @@ class SintecProj(object):
 			
 			#====================================================================================
 			#Random Forrest
-			nTrees=[5,10,100]
+			nTrees=[1,100]
 			[x_labs.append(f'RF: {x}') for x in nTrees]
 			for trees in nTrees:
 				regr=RandomForestRegressor(n_estimators=trees,random_state=7,criterion='mae')
