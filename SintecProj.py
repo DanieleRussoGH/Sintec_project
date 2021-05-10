@@ -18,6 +18,7 @@ class SintecProj(object):
 	"""docstring for SintecProj"""
 	def __init__(self):
 		self.fs = 125
+		self.PREV_VAL = 15 # X * 0.1 = [s]
 		self.patient_path = str(os.getcwd())+'\\Patients'
 		self.dataset_path = str(os.getcwd())+'\\Dataset'
 		self.plot_setup()
@@ -204,7 +205,6 @@ class SintecProj(object):
 			self.create_path(regr_path)
 			dataset.to_csv(f'{regr_path}\\{patient}.csv')
 		
-
 	def gaussian_distributions(self,curve,peaks):
 		x = np.arange(min(curve),max(curve),.001)
 		kde_curve = stats.gaussian_kde(curve)
@@ -337,8 +337,9 @@ class SintecProj(object):
 
 		TRAIN_PERC = .75
 		regr_path = 'Dataset\\Regression'
-		# file_lst = [x for x in os.listdir(regr_path) if '3601140' in x]
+		dbp_errors, sbp_errors = pd.DataFrame(), pd.DataFrame()
 		file_lst = os.listdir(regr_path)
+		# file_lst = [x for x in os.listdir(regr_path) if '3601140' in x]
 		for file in file_lst:
 			patient = file.split('.')[0]
 			print(f'Patient: {patient}')
@@ -387,15 +388,15 @@ class SintecProj(object):
 			axs_b.tick_params(axis='y', labelcolor='tab:blue')
 			[x.grid() for x in [axs[0], axs_b]]
 
-			PREV_VAL = 15
+			
 			for x in train_cols:
-				for y in range(1,PREV_VAL):
+				for y in range(1,self.PREV_VAL):
 					df[f'{x}-{y}'] = df[x].shift(y)
 			df = df.dropna()
 			df['ones'] = np.ones(len(df))
 			
 			train_cols = ['HR','PTT','ones']
-			for x in range(1,PREV_VAL):
+			for x in range(1,self.PREV_VAL):
 				train_cols.append(f'HR-{x}')
 				train_cols.append(f'PTT-{x}')
 			final_cols = df.columns
@@ -432,7 +433,7 @@ class SintecProj(object):
 
 			# ====================================================================================
 			# Support Vector Regression
-			Cs = [1,50]
+			Cs = [.01,100]
 			[x_labs.append(f'SVR: {x}') for x in Cs]
 			for c in Cs:
 				regr = SVR(C=c, epsilon=0.2)
@@ -610,7 +611,16 @@ class SintecProj(object):
 			plt.tight_layout()
 			self.create_path('Plots\\Regression')
 			plt.savefig(f'Plots\\Regression\\{patient}.png')
+			dbp_errors[patient] = maes_dbp
+			sbp_errors[patient] = maes_sbp
 			# plt.show()
+		dbp_errors.index = x_labs 
+		sbp_errors.index = x_labs 
+		# print(dbp_errors)
+		# print(sbp_errors)
+		dbp_errors.to_excel(f'{self.dataset_path}\\dbp_errors.xlsx')
+		sbp_errors.to_excel(f'{self.dataset_path}\\sbp_errors.xlsx')
+
 
 	def regression(self,clf,y_train,X_train,X_test):
 		from sklearn.preprocessing import RobustScaler
