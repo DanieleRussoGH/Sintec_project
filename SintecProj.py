@@ -11,7 +11,8 @@ from scipy import stats
 from pprint import pprint
 from sklearn.linear_model import Ridge
 from sklearn.svm import SVR
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+# sklearn.metrics has a mean_squared_error function with a squared kwarg (defaults to True). Setting squared to False will return the RMSE.
 
 
 class SintecProj(object):
@@ -31,6 +32,8 @@ class SintecProj(object):
 			'3609839','3609868','3607711',#ok
 			'3602521','3602766','3602772','3603658','3604352', #maybe
 			'3605724','3606319','3606358','3606901','3607077'] #maybe
+
+		self.drop_lst = ['3609868','3606901','3606358','3606319','3606315','3600376','3403232','3400715']
 
 	def create_path(self, path):
 		if not os.path.exists(path):
@@ -267,14 +270,18 @@ class SintecProj(object):
 		axs[0].set_title(f'HR and SP peaks cleaning for patient: {patient}')
 		
 		#HR cleaning:
-		if np.std(HR) > 3:
-			up_bound, low_bound = np.mean(HR)+np.std(HR), np.mean(HR)-np.std(HR)
-			axs[0].axhline(np.mean(HR),c='r',lw=4, label='Mean Value')
-			axs[0].fill_between(ecg_TS[1:], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
-			nan_idx = np.concatenate((np.argwhere(HR<=low_bound),np.argwhere(HR>=up_bound)))
-			HR[nan_idx] = np.nan		
-			HR = pd.DataFrame(HR).interpolate(method='polynomial',order=2)
-			axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
+		LEN_WDW = len(HR)/5
+		#CHECK IF IT WORKSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+		for x in range(5):
+			HR = HR[LEN_WDW*x:LEN_WDW*x+LEN_WDW]
+			if np.std(HR) > 3:
+				up_bound, low_bound = np.mean(HR)+np.std(HR), np.mean(HR)-np.std(HR)
+				axs[0].axhline(np.mean(HR),c='r',lw=4, label='Mean Value')
+				axs[0].fill_between(ecg_TS[1:], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+				nan_idx = np.concatenate((np.argwhere(HR<=low_bound),np.argwhere(HR>=up_bound)))
+				HR[nan_idx] = np.nan		
+				HR = pd.DataFrame(HR).interpolate(method='polynomial',order=2)
+				axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
 		axs[0].legend()
 		axs[0].set_ylabel('HR [mmHg]')
 
@@ -433,7 +440,7 @@ class SintecProj(object):
 
 			# ====================================================================================
 			# Support Vector Regression
-			Cs = [.01,100]
+			Cs = [50, 1000]
 			[x_labs.append(f'SVR: {x}') for x in Cs]
 			for c in Cs:
 				regr = SVR(C=c, epsilon=0.2)
@@ -621,6 +628,19 @@ class SintecProj(object):
 		dbp_errors.to_excel(f'{self.dataset_path}\\dbp_errors.xlsx')
 		sbp_errors.to_excel(f'{self.dataset_path}\\sbp_errors.xlsx')
 
+	def best_fz(self):
+		for x in ['dbp','sbp']:
+			fname = f'{x}_errors.xlsx'
+			df = pd.read_excel(self.dataset_path+'\\'+fname).transpose()
+			df.columns = df.iloc[0]
+			df = df.iloc[1::].astype(float).drop(self.drop_lst, axis=0)
+			df = df.drop([x for x in df.columns if 'SVR' in x],axis=1)
+			df['best'] = df.idxmin(axis=1)
+			print(df)
+			best_values = df['best'].value_counts(sort=True)
+			print(f'For {x.upper()} the best values are:')
+			print(best_values)
+			print()
 
 	def regression(self,clf,y_train,X_train,X_test):
 		from sklearn.preprocessing import RobustScaler
