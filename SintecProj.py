@@ -1,3 +1,4 @@
+from math import nan
 from sklearn.model_selection import GridSearchCV
 import csv
 import os
@@ -28,12 +29,15 @@ class SintecProj(object):
 			'3600376','3600490','3600620','3601272','3403274','3604404','3604430','3604660',#ok
 			'3604404','3604430','3604660','3605744','3606315','3603256','3604217','3607634',#ok
 			'3608436','3608706','3609155','3609182','3609463','3606882','3606909','3607464',#ok
-			# '3601140' #no
 			'3609839','3609868','3607711',#ok
 			'3602521','3602766','3602772','3603658','3604352', #maybe
-			'3605724','3606319','3606358','3606901','3607077'] #maybe
+			'3605724','3606319','3606358','3606901','3607077', #maybe
+			'3800183','3800350','3900487','3900769','3901160','3901339', #new
+			'3901654','3902124','3902445','3902729','3902894', #new
+			'3902994','3903282','3904246','3904308','3904396','3904550', #new
+			'3905695','3905772','3907039'] #new
 
-		self.drop_lst = ['3609868','3606901','3606358','3606319','3606315','3600376','3403232','3400715']
+		self.drop_lst = ['3609868','3606901','3606358','3606319','3606315','3600376','3403232','3400715','3900769']
 
 	def create_path(self, path):
 		if not os.path.exists(path):
@@ -98,7 +102,7 @@ class SintecProj(object):
 	def peak_finder(self):
 		self.create_path('Plots\\Peaks')
 		tmp_path = self.plot_path+'\\Peaks'
-		file_lst = [x for x in os.listdir(self.dataset_path) if x != 'Regression']
+		file_lst = [x for x in os.listdir(self.dataset_path) if x.endswith('.csv')]
 		# file_lst = [x for x in os.listdir(self.dataset_path) if '3601140' in x]
 
 		for file in file_lst:
@@ -179,7 +183,7 @@ class SintecProj(object):
 				axs[2,1].plot(kde_sp(x_ppg),x_ppg,label='KDE of SP peaks') 
 
 				if min_ != None:
-					axs[2,1].axhline(min_,c='red',label='aaaa') 
+					axs[2,1].axhline(min_,c='red',label='Threshold') 
 					axs[2,0].axhline(min_,c='red',label='Threshold') 
 
 				[axs[x,0].legend(loc='lower left', facecolor='white', framealpha=.8) for x in range(3)]
@@ -270,20 +274,36 @@ class SintecProj(object):
 		axs[0].set_title(f'HR and SP peaks cleaning for patient: {patient}')
 		
 		#HR cleaning:
-		LEN_WDW = len(HR)/5
-		#CHECK IF IT WORKSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
-		for x in range(5):
-			HR = HR[LEN_WDW*x:LEN_WDW*x+LEN_WDW]
-			if np.std(HR) > 3:
-				up_bound, low_bound = np.mean(HR)+np.std(HR), np.mean(HR)-np.std(HR)
-				axs[0].axhline(np.mean(HR),c='r',lw=4, label='Mean Value')
-				axs[0].fill_between(ecg_TS[1:], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
-				nan_idx = np.concatenate((np.argwhere(HR<=low_bound),np.argwhere(HR>=up_bound)))
+		HR_or = HR.copy()
+		print(f'HR: {HR}')
+		LEN_WDW = int(len(HR)/5)
+		# HR_final = []
+		# CHECK IF IT WORKSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+		for x in range(10):
+			HR_tmp = HR[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
+			print(f'\n HR in window {int(LEN_WDW*x*.5)}:{int(LEN_WDW*(1+x*.5))}')
+			print(f'{HR_tmp}')
+			if np.std(HR_tmp) > 3:
+				up_bound, low_bound = np.mean(HR_tmp)+np.std(HR_tmp), np.mean(HR_tmp)-np.std(HR_tmp)
+				# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
+				axs[0].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+				# else: axs[0].fill_between(ecg_TS[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+				nan_idx = np.concatenate((np.argwhere(HR_tmp<=low_bound),np.argwhere(HR_tmp>=up_bound)))
+				nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
+				print(nan_idx)
 				HR[nan_idx] = np.nan		
-				HR = pd.DataFrame(HR).interpolate(method='polynomial',order=2)
-				axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
+				# HR_tmp = pd.DataFrame(HR_tmp).interpolate(method='polynomial',order=5)
+				# print([x[0] for x in HR_tmp.values.tolist()])
+				# print(HR[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))])
+				# HR[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))] = [x[0] for x in HR_tmp.values.tolist()]
+				# else: axs[0].plot(ecg_TS[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))],HR_tmp.values.tolist(),label='HR - cleaned',c='g')
+				# HR_final = np.concatenate((HR_final,HR_tmp))
+		HR = pd.DataFrame(HR).interpolate(method='polynomial',order=5)
+		axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
 		axs[0].legend()
 		axs[0].set_ylabel('HR [mmHg]')
+		# HR = HR_final
+		print(HR)
 
 		#PTT evaluation:
 		time = np.arange(0,max(max(ECG_peaks),max(PPG_peaks)),1)
@@ -346,6 +366,8 @@ class SintecProj(object):
 		regr_path = 'Dataset\\Regression'
 		dbp_errors, sbp_errors = pd.DataFrame(), pd.DataFrame()
 		file_lst = os.listdir(regr_path)
+		file_lst = [y for y in file_lst if y.split('.')[0] not in self.drop_lst]
+		# file_lst = file_lst[40::]
 		# file_lst = [x for x in os.listdir(regr_path) if '3601140' in x]
 		for file in file_lst:
 			patient = file.split('.')[0]
@@ -550,7 +572,7 @@ class SintecProj(object):
 			
 			#====================================================================================
 			#Random Forrest
-			nTrees=[1,100]
+			nTrees=[100]
 			[x_labs.append(f'RF: {x}') for x in nTrees]
 			for trees in nTrees:
 				regr=RandomForestRegressor(n_estimators=trees,random_state=7,criterion='mae')
@@ -566,6 +588,21 @@ class SintecProj(object):
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
 
+			# # Linear regression
+			w_dbp = (np.linalg.inv(X_train_dbp.values.T@X_train_dbp.values))@(X_train_dbp.values.T@y_train_dbp.values)
+			y_hat_dbp = X_test_dbp.values@w_dbp
+			axs[1].plot(y_test_dbp.index,y_hat_dbp,label='Linear')
+			MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+			maes_dbp.append(MAE_dbp)
+			
+
+			w_sbp = (np.linalg.inv(X_train_sbp.values.T@X_train_sbp.values))@(X_train_sbp.values.T@y_train_sbp.values)
+			y_hat_sbp = X_test_sbp.values@w_sbp
+			axs[2].plot(y_test_sbp.index,y_hat_sbp,label='Linear')
+			MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+			maes_sbp.append(MAE_sbp)
+			x_labs.append(f'Linear')
+			
 			#Grid search for RF
 			# params = {
 			# 	# 'bootstrap': [True],
