@@ -138,8 +138,8 @@ class SintecProj(object):
 			#find SP peaks
 			SPs,_ = scipy.signal.find_peaks(ppg_filt,prominence=.05,width=10)
 			SPs_new, [kde_ppg, kde_sp, x_ppg, min_] = self.PPG_peaks_cleaner(ppg_filt, SPs)
-			print(SPs_new)
-			if True:
+			# print(SPs_new)
+			if False:
 				plt.style.use('default')
 				fig, axs = plt.subplots(3,2,sharex=True)
 				fig.set_size_inches(self.figsize)
@@ -274,15 +274,9 @@ class SintecProj(object):
 		axs[0].set_title(f'HR and SP peaks cleaning for patient: {patient}')
 		
 		#HR cleaning:
-		HR_or = HR.copy()
-		print(f'HR: {HR}')
 		LEN_WDW = int(len(HR)/5)
-		# HR_final = []
-		# CHECK IF IT WORKSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
 		for x in range(10):
 			HR_tmp = HR[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
-			print(f'\n HR in window {int(LEN_WDW*x*.5)}:{int(LEN_WDW*(1+x*.5))}')
-			print(f'{HR_tmp}')
 			if np.std(HR_tmp) > 3:
 				up_bound, low_bound = np.mean(HR_tmp)+np.std(HR_tmp), np.mean(HR_tmp)-np.std(HR_tmp)
 				# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
@@ -290,20 +284,12 @@ class SintecProj(object):
 				# else: axs[0].fill_between(ecg_TS[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
 				nan_idx = np.concatenate((np.argwhere(HR_tmp<=low_bound),np.argwhere(HR_tmp>=up_bound)))
 				nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
-				print(nan_idx)
-				HR[nan_idx] = np.nan		
-				# HR_tmp = pd.DataFrame(HR_tmp).interpolate(method='polynomial',order=5)
-				# print([x[0] for x in HR_tmp.values.tolist()])
-				# print(HR[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))])
-				# HR[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))] = [x[0] for x in HR_tmp.values.tolist()]
-				# else: axs[0].plot(ecg_TS[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))],HR_tmp.values.tolist(),label='HR - cleaned',c='g')
-				# HR_final = np.concatenate((HR_final,HR_tmp))
+				HR[nan_idx] = np.nan
 		HR = pd.DataFrame(HR).interpolate(method='polynomial',order=5)
 		axs[0].plot(ecg_TS[1:],HR.values.tolist(),label='HR - cleaned',c='g')
 		axs[0].legend()
 		axs[0].set_ylabel('HR [mmHg]')
-		# HR = HR_final
-		print(HR)
+		# print(f'HR: {HR}')
 
 		#PTT evaluation:
 		time = np.arange(0,max(max(ECG_peaks),max(PPG_peaks)),1)
@@ -331,8 +317,22 @@ class SintecProj(object):
 
 		rf_diff = np.diff(time_rf)
 		ptt = time_spf - time_rf
-		# print(f'PTT: {ptt}')
-
+		
+		#PTT cleaning:
+		# axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='tab:red', linestyles='solid', label='ptt')
+		# print(f'PTT: {pd.DataFrame(ptt)}')
+		# for x in range(10):
+		# 	PTT_tmp = ptt[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
+		# 	# print(PTT_tmp)
+		# 	if np.std(PTT_tmp) > .05:
+		# 		print(np.std(PTT_tmp))
+		# 		up_bound, low_bound = np.mean(PTT_tmp)+np.std(HR_tmp), np.mean(PTT_tmp)-np.std(PTT_tmp)
+		# 		# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
+		# 		# axs[1].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+		# 		nan_idx = np.concatenate((np.argwhere(PTT_tmp<=low_bound),np.argwhere(PTT_tmp>=up_bound)))
+		# 		nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
+		# 		ptt[nan_idx] = np.nan
+		# ptt = pd.DataFrame(ptt).interpolate(method='polynomial',order=5)	
 		axs[1].set_ylabel('PTT [s]')
 		axs[1].plot(ecg_TS,ECG[ECG_peaks],'o-',label='R peaks')
 		axs[1].plot(real_time[index_rf],ECG[index_rf],'o-',label='R peaks - newly found')
@@ -391,18 +391,37 @@ class SintecProj(object):
 			df['PTT'] = df['PTT'].interpolate(method='polynomial',order=1)
 			
 			df = df.loc[x_final].dropna()
-			print(df)
 			[axs[0].plot(df[x],'*',alpha=.4,label=y) for x,y in zip(['HR','SBP','DBP'],['HR - resampled','SBP - resampled','DBP - resampled'])]
 			axs[1].plot(df['PTT'],'*',alpha=.4,label='PTT - resampled')
 			[axs[i].legend() for i in range(2)]
 			axs[1].set_xlabel('Time [s]')
-
+			
+			
+			LEN_WDW = int(len(df['PTT'])/5)
+			ptt = np.array(df['PTT'])
+			for x in range(10):
+				PTT_tmp = ptt[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
+				print(np.std(PTT_tmp))
+				print(PTT_tmp)
+				if np.std(PTT_tmp) > .05:
+					print(np.std(PTT_tmp))
+					up_bound, low_bound = np.mean(PTT_tmp)+np.std(PTT_tmp), np.mean(PTT_tmp)-np.std(PTT_tmp)
+					# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
+					# axs[1].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+					nan_idx = np.concatenate((np.argwhere(PTT_tmp<=low_bound),np.argwhere(PTT_tmp>=up_bound)))
+					nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
+					ptt[nan_idx] = np.nan
+			ptt = pd.DataFrame(ptt).interpolate(method='polynomial',order=1)
+			ptt.index = df['PTT'].index
+			df['PTT'] = ptt
+			axs[1].plot(df['PTT'],'*',alpha=.4,label='PTT - resampled & cleaned')
 			plt.tight_layout()
 			self.create_path('Plots\\interpolation')
 			plt.savefig(f'Plots\\interpolation\\{patient}.png')
-			# plt.show()
+			plt.show()
+
 			plt.close()
-			
+
 			#REGRESSION
 			fig, axs = plt.subplots(4,1)
 			fig.set_size_inches((16,9))
@@ -417,7 +436,8 @@ class SintecProj(object):
 			axs_b.tick_params(axis='y', labelcolor='tab:blue')
 			[x.grid() for x in [axs[0], axs_b]]
 
-			
+
+
 			for x in train_cols:
 				for y in range(1,self.PREV_VAL):
 					df[f'{x}-{y}'] = df[x].shift(y)
@@ -462,7 +482,7 @@ class SintecProj(object):
 
 			# ====================================================================================
 			# Support Vector Regression
-			Cs = [50, 1000]
+			Cs = [50]
 			[x_labs.append(f'SVR: {x}') for x in Cs]
 			for c in Cs:
 				regr = SVR(C=c, epsilon=0.2)
@@ -478,29 +498,10 @@ class SintecProj(object):
 				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
-			"""
-			# ====================================================================================
-			# Support Vector Regression
-			pol_orders = []
-			Cs = [1,50,1000]
-			for c in Cs:
-				regr = SVR(C=c, epsilon=0.2)
-				regr.fit(X_train_dbp, y_train_dbp)
-				y_hat_dbp = regr.predict(X_test_dbp)
-				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
-				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-				maes_dbp.append(MAE_dbp)
 
-				regr = SVR(C=c, epsilon=.2)
-				regr.fit(X_train_sbp, y_train_sbp)
-				y_hat_sbp = regr.predict(X_test_sbp)
-				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
-				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-				maes_sbp.append(MAE_sbp)
-			"""
 			#====================================================================================
 			#Ridge Regression
-			alphas = [.01, 100]
+			alphas = [.01,.0001]
 			[x_labs.append(f'RR: {x}') for x in alphas]
 			for alpha in alphas:
 				clf = Ridge(alpha=alpha)
@@ -637,13 +638,13 @@ class SintecProj(object):
 			axs[3].set_ylabel('MAE [-]')
 			axs[3].legend()
 
-			axs[1].plot(y_test_dbp,label='test')
+			axs[1].plot(y_test_dbp,label='test',ls='--',lw=2,c='tab:blue')
 			axs[1].set_ylabel('DBP [mmHg]')
 			axs[1].set_xlabel('Time [s]')
 			axs[1].set_ylim(min(df['DBP'])-10,max(df['DBP'])+10)
 			axs[1].legend(ncol=3)
 
-			axs[2].plot(y_test_sbp,label='test')
+			axs[2].plot(y_test_sbp,label='test',ls='--',lw=2,c='tab:blue')
 			axs[2].set_ylabel('SBP [mmHg]')
 			axs[2].set_xlabel('Time [s]')
 			axs[2].set_ylim(min(df['SBP'])-10,max(df['SBP'])+10)
