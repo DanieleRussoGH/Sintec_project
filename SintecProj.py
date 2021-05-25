@@ -319,26 +319,32 @@ class SintecProj(object):
 		ptt = time_spf - time_rf
 		
 		#PTT cleaning:
-		# axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='tab:red', linestyles='solid', label='ptt')
+		axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='tab:green', linestyles='solid', label='ptt')
 		# print(f'PTT: {pd.DataFrame(ptt)}')
-		# for x in range(10):
-		# 	PTT_tmp = ptt[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
-		# 	# print(PTT_tmp)
-		# 	if np.std(PTT_tmp) > .05:
-		# 		print(np.std(PTT_tmp))
-		# 		up_bound, low_bound = np.mean(PTT_tmp)+np.std(HR_tmp), np.mean(PTT_tmp)-np.std(PTT_tmp)
-		# 		# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
-		# 		# axs[1].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
-		# 		nan_idx = np.concatenate((np.argwhere(PTT_tmp<=low_bound),np.argwhere(PTT_tmp>=up_bound)))
-		# 		nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
-		# 		ptt[nan_idx] = np.nan
-		# ptt = pd.DataFrame(ptt).interpolate(method='polynomial',order=5)	
+		for x in range(10):
+			PTT_tmp = ptt[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
+			# print(PTT_tmp)
+			if np.std(PTT_tmp) > .05:
+				print(np.std(PTT_tmp))
+				up_bound, low_bound = np.mean(PTT_tmp)+np.std(PTT_tmp), np.mean(PTT_tmp)-np.std(PTT_tmp)
+				# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
+				# axs[1].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+				nan_idx = np.concatenate((np.argwhere(PTT_tmp<=low_bound),np.argwhere(PTT_tmp>=up_bound)))
+				nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
+				ptt[nan_idx] = np.nan
+		TEMP = pd.DataFrame(columns=['Before','After'])
+		TEMP['Before'] = ptt
+		# print(f'Before: {ptt}')
+		ptt = pd.DataFrame(ptt).interpolate(method='polynomial',order=1)
+		TEMP['After'] = ptt
+		print(TEMP[TEMP['Before'].isnull()])
+		
 		axs[1].set_ylabel('PTT [s]')
 		axs[1].plot(ecg_TS,ECG[ECG_peaks],'o-',label='R peaks')
 		axs[1].plot(real_time[index_rf],ECG[index_rf],'o-',label='R peaks - newly found')
 		axs[1].plot(ppg_TS,PPG[PPG_peaks],'o-',label='SP peaks')
 		axs[1].plot(real_time[index_spf],PPG[index_spf],'o-',label='SP peaks - newly found')
-		axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='tab:red', linestyles='solid', label='ptt')
+		axs[1].hlines(ptt, xmin=real_time[index_rf], xmax=real_time[index_spf], colors='tab:red', linestyles='solid', label='ptt - newly found')
 		axs[1].legend()
 		plt.tight_layout()
 		plt.savefig(f'{tmp_path}\\{patient}')
@@ -397,28 +403,28 @@ class SintecProj(object):
 			axs[1].set_xlabel('Time [s]')
 			
 			
-			LEN_WDW = int(len(df['PTT'])/5)
-			ptt = np.array(df['PTT'])
-			for x in range(10):
-				PTT_tmp = ptt[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
-				print(np.std(PTT_tmp))
-				print(PTT_tmp)
-				if np.std(PTT_tmp) > .05:
-					print(np.std(PTT_tmp))
-					up_bound, low_bound = np.mean(PTT_tmp)+np.std(PTT_tmp), np.mean(PTT_tmp)-np.std(PTT_tmp)
-					# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
-					# axs[1].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
-					nan_idx = np.concatenate((np.argwhere(PTT_tmp<=low_bound),np.argwhere(PTT_tmp>=up_bound)))
-					nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
-					ptt[nan_idx] = np.nan
-			ptt = pd.DataFrame(ptt).interpolate(method='polynomial',order=1)
-			ptt.index = df['PTT'].index
-			df['PTT'] = ptt
-			axs[1].plot(df['PTT'],'*',alpha=.4,label='PTT - resampled & cleaned')
+			# LEN_WDW = int(len(df['PTT'])/5)
+			# ptt = np.array(df['PTT'])
+			# for x in range(10):
+			# 	PTT_tmp = ptt[int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))]
+			# 	print(np.std(PTT_tmp))
+			# 	print(PTT_tmp)
+			# 	if np.std(PTT_tmp) > .05:
+			# 		print(np.std(PTT_tmp))
+			# 		up_bound, low_bound = np.mean(PTT_tmp)+np.std(PTT_tmp), np.mean(PTT_tmp)-np.std(PTT_tmp)
+			# 		# axs[0].axhline(np.mean(HR_tmp),c='r',lw=4, label='Mean Value')
+			# 		# axs[1].fill_between(ecg_TS[1:][int(LEN_WDW*x*.5):int(LEN_WDW*(1+x*.5))], low_bound, up_bound, alpha=0.15, color='tab:red', lw=4)
+			# 		nan_idx = np.concatenate((np.argwhere(PTT_tmp<=low_bound),np.argwhere(PTT_tmp>=up_bound)))
+			# 		nan_idx = list([int(LEN_WDW*x*.5)+y[0] for y in nan_idx])
+			# 		ptt[nan_idx] = np.nan
+			# ptt = pd.DataFrame(ptt).interpolate(method='polynomial',order=1)
+			# ptt.index = df['PTT'].index
+			# df['PTT'] = ptt
+			# axs[1].plot(df['PTT'],'*',alpha=.4,label='PTT - resampled & cleaned')
 			plt.tight_layout()
 			self.create_path('Plots\\interpolation')
 			plt.savefig(f'Plots\\interpolation\\{patient}.png')
-			plt.show()
+			# plt.show()
 
 			plt.close()
 
