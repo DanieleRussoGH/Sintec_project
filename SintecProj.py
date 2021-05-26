@@ -1,4 +1,5 @@
 from math import nan
+from numpy.core.fromnumeric import ptp
 from sklearn.model_selection import GridSearchCV
 import csv
 import os
@@ -20,6 +21,7 @@ class SintecProj(object):
 	"""docstring for SintecProj"""
 	def __init__(self):
 		self.fs = 125
+		self.mmHg_thresh = [10,5]
 		self.PREV_VAL = 15 # X * 0.1 = [s]
 		self.patient_path = str(os.getcwd())+'\\Patients'
 		self.dataset_path = str(os.getcwd())+'\\Dataset'
@@ -393,7 +395,7 @@ class SintecProj(object):
 
 			df[['HR','SBP','DBP']].plot(style='o', ax=axs[0])
 			df[['PTT']].plot(style='o', ax=axs[1])
-			df[['HR','SBP','DBP']] = df[['HR','SBP','DBP']].interpolate(method='polynomial',order=3)
+			df[['HR','SBP','DBP']] = df[['HR','SBP','DBP']].interpolate(method='polynomial',order=1)
 			df['PTT'] = df['PTT'].interpolate(method='polynomial',order=1)
 			
 			df = df.loc[x_final].dropna()
@@ -442,8 +444,6 @@ class SintecProj(object):
 			axs_b.tick_params(axis='y', labelcolor='tab:blue')
 			[x.grid() for x in [axs[0], axs_b]]
 
-
-
 			for x in train_cols:
 				for y in range(1,self.PREV_VAL):
 					df[f'{x}-{y}'] = df[x].shift(y)
@@ -484,6 +484,7 @@ class SintecProj(object):
 			axs[1].plot(y_train_dbp,label='train')
 			axs[2].plot(y_train_sbp,label='train')
 			maes_dbp, maes_sbp = [],[]
+			count_dbp, count_sbp = [],[]
 			x_labs = []
 
 			# ====================================================================================
@@ -496,6 +497,7 @@ class SintecProj(object):
 				y_hat_dbp = regr.predict(X_test_dbp)
 				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR, deg:{c}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				count_dbp.append(self.count_diff(y_test_dbp, y_hat_dbp, 'SVR-DBP'))
 				maes_dbp.append(MAE_dbp)
 
 				regr = SVR(C=c, epsilon=.2)
@@ -504,7 +506,8 @@ class SintecProj(object):
 				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR, deg:{c}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				maes_sbp.append(MAE_sbp)
-
+				count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'SVR-SBP'))
+				
 			#====================================================================================
 			#Ridge Regression
 			alphas = [.01,.0001]
@@ -514,11 +517,13 @@ class SintecProj(object):
 				y_hat_dbp = self.regression(clf,y_train_dbp,X_train_dbp,X_test_dbp)
 				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'alpha = {alpha}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				count_dbp.append(self.count_diff(y_test_dbp, y_hat_dbp, 'RR-DBP'))
 				maes_dbp.append(MAE_dbp)
 
 				y_hat_sbp = self.regression(clf,y_train_sbp,X_train_sbp,X_test_sbp)
 				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'alpha = {alpha}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'RR-SBP'))
 				maes_sbp.append(MAE_sbp)
 
 			# ====================================================================================
@@ -587,12 +592,14 @@ class SintecProj(object):
 				# y_hat_dbp = regr.predict(X_test_dbp)
 				axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'tree = {trees}')
 				MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
+				count_dbp.append(self.count_diff(y_test_dbp, y_hat_dbp, 'RF-DBP'))
 				maes_dbp.append(MAE_dbp)
 				
 				regr.fit(X_train_sbp, y_train_sbp)
 				y_hat_sbp = self.regression(regr,y_train_sbp,X_train_sbp,X_test_sbp)
 				axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'tree = {trees}')
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
+				count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'RF-SBP'))
 				maes_sbp.append(MAE_sbp)
 
 			# # Linear regression
@@ -601,6 +608,7 @@ class SintecProj(object):
 			axs[1].plot(y_test_dbp.index,y_hat_dbp,label='Linear')
 			MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
 			maes_dbp.append(MAE_dbp)
+			count_dbp.append(self.count_diff(y_test_dbp, y_hat_dbp, 'Lin-DBP'))
 			
 
 			w_sbp = (np.linalg.inv(X_train_sbp.values.T@X_train_sbp.values))@(X_train_sbp.values.T@y_train_sbp.values)
@@ -608,6 +616,7 @@ class SintecProj(object):
 			axs[2].plot(y_test_sbp.index,y_hat_sbp,label='Linear')
 			MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 			maes_sbp.append(MAE_sbp)
+			count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'Lin-SBP'))
 			x_labs.append(f'Linear')
 			
 			#Grid search for RF
@@ -659,12 +668,13 @@ class SintecProj(object):
 			# ax = df.plot(style='o-')
 			# df_interpolated.plot(ax=ax)
 			# plt.legend()
+			print(df)
 			plt.tight_layout()
 			self.create_path('Plots\\Regression')
 			plt.savefig(f'Plots\\Regression\\{patient}.png')
 			dbp_errors[patient] = maes_dbp
 			sbp_errors[patient] = maes_sbp
-			# plt.show()
+			plt.show()
 		dbp_errors.index = x_labs 
 		sbp_errors.index = x_labs 
 		# print(dbp_errors)
@@ -677,10 +687,14 @@ class SintecProj(object):
 			fname = f'{x}_errors.xlsx'
 			df = pd.read_excel(self.dataset_path+'\\'+fname).transpose()
 			df.columns = df.iloc[0]
-			df = df.iloc[1::].astype(float).drop(self.drop_lst, axis=0)
-			df = df.drop([x for x in df.columns if 'SVR' in x],axis=1)
+			# print(df)
+			df = df.iloc[1::].astype(float)
+			df = df.drop([x for x in df.columns if 'SVR' in x or '0.0001' in x or 'Linear' in x],axis=1)
 			df['best'] = df.idxmin(axis=1)
+			# df['real best'] = np.where(df.min(axis=1)<np.ones(len(df))*3)
+			df['real best'] = np.where(np.abs(df['RR: 0.01']-df['RF: 100'])>0.9, True, False)
 			print(df)
+			df = df[df['real best']]
 			best_values = df['best'].value_counts(sort=True)
 			print(f'For {x.upper()} the best values are:')
 			print(best_values)
@@ -704,3 +718,13 @@ class SintecProj(object):
 		clf.fit(X_train,y_train)
 		pred_gs = clf.predict(X_test)
 		return pred_gs
+
+	def count_diff(self, test, pred, alg_type):
+		for thresh in self.mmHg_thresh:
+			test, pred= np.array(test), np.array(pred)
+			diff = np.abs(test - pred)
+			count = sum(i > thresh for i in diff)
+			count_perc = round(100*count/len(test),1)
+			print(f'{count_perc}[%] > {thresh} [mmHg] for {alg_type}')
+		print()
+		return count_perc
