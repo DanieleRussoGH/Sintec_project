@@ -33,4 +33,7 @@ SP.regression_process()
 SP.best_fz()
 ```
 
+## Workflow
+[data_processing.pdf](https://github.com/DanieleRussoGH/Sintec_project/files/6760265/data_processing.pdf)
+[Train_Vs_Test.pdf](https://github.com/DanieleRussoGH/Sintec_project/files/6760266/Train_Vs_Test.pdf)
 
