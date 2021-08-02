@@ -29,18 +29,22 @@ class SintecProj(object):
 		self.plot_setup()
 		self.save_figure = False
 		self.signal_list = [
-			'3400715','3402408','3402291','3600293','3403232','3602237','3602666',
-			'3600376','3600490','3600620','3601272','3403274','3604430','3604660',
-			'3604404','3605744','3904308','3603256','3604217','3607634','3607464',
-			'3608436','3608706','3609155','3609182','3609463','3606882','3606909',
-			'3602521','3602766','3602772','3603658','3604352','3607711','3609839',
-			'3605724','3904396','3606358','3606901','3607077','3609868','3907039',
-			'3800183','3800350','3900487','3901160','3901339','3905772','3903282',
-			'3901654','3902124','3902445','3902729','3902894','3905695','3904550',
-			'3902994','3904246'] 
-
-		self.drop_lst = [
-			'3609868','3606901','3600376','3403232','3400715']
+			'3001689','3001203','3000714','3515650','3516310','3510820',
+			'3513879','3513631','3511504','3512125','3513230','3503726',
+			'3509498','3509505','3508696','3508299','3506991','3505101',
+			'3507993','3508009','3505162','3505174','3503945','3503406',
+			'3503404','3502786','3403213','3700665','3700837','3703763',
+			'3703856','3703872','3704307','3704658','3704803','3705715',
+			'3705993','3402408','3402291','3600293','3602237','3602666',
+			'3600490','3600620','3601272','3403274','3604430','3604660',
+			'3604404','3605744','3904308','3603256','3604217','3607634',
+			'3608436','3608706','3609155','3609182','3609463','3606882',
+			'3602521','3602766','3602772','3603658','3604352','3607711',
+			'3605724','3904396','3606358','3607077','3907039','3607464',
+			'3606909','3609839','3800183','3800350','3900487','3901160',
+			'3901339','3905772','3903282','3901654','3902124','3902445',
+			'3902729','3902894','3905695','3904550','3902994','3904246'] 		
+		
 
 	def create_path(self, path):
 		if not os.path.exists(path):
@@ -174,8 +178,8 @@ class SintecProj(object):
 				axs[2,0] = plt.subplot(gs[2,0])
 				axs[2,0].plot(ppg_filt,label='PPG Filtered')
 				# axs[2].plot(df['PLETH'],label='PPG')
-				axs[2,0].scatter(SPs,ppg_filt[SPs],label='SP peaks',s=100,c='r')
-				axs[2,0].scatter(SPs_new,ppg_filt[SPs_new],label='SP peaks - cleaned',c='y')
+				axs[2,0].scatter(SPs,ppg_filt[SPs],label='SP peaks - first evalutation',s=100,c='r')
+				axs[2,0].scatter(SPs_new,ppg_filt[SPs_new],label='SP peaks - after KDE',c='y')
 				axs[2,0].set_ylabel('PPG [mV]')
 				
 				# Gaussian dist. - PPG
@@ -371,7 +375,6 @@ class SintecProj(object):
 		regr_path = 'Dataset\\Regression'
 		dbp_errors, sbp_errors = pd.DataFrame(), pd.DataFrame()
 		file_lst = os.listdir(regr_path)
-		file_lst = [y for y in file_lst if y.split('.')[0] not in self.drop_lst]
 		final_dict_dbp, final_dict_sbp = {}, {}
 		# file_lst = file_lst[40::]
 		# file_lst = [x for x in os.listdir(regr_path) if '3601140' in x]
@@ -510,62 +513,6 @@ class SintecProj(object):
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'RR-SBP'))
 				maes_sbp.append(MAE_sbp)
-
-			# ====================================================================================
-			# Polynomial regression - smt wrong
-			# pol_orders = [1,2,3,4]
-			# for order in pol_orders:
-			# 	polynomial_features= PolynomialFeatures(degree=order)
-
-			# 	x_poly_dbp = polynomial_features.fit_transform(X_train_dbp)
-			# 	model_dbp = LinearRegression()
-			# 	model_dbp.fit(x_poly_dbp, y_train_dbp)
-			# 	y_poly_pred = model_dbp.predict(polynomial_features.fit_transform(X_test_dbp))
-			# 	MAE_dbp = round(mean_absolute_error(y_test_dbp, y_poly_pred),2)
-			# 	maes_dbp.append(MAE_dbp)
-			# 	axs[1].plot(y_test_dbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
-
-			# 	x_poly_sbp = polynomial_features.fit_transform(X_train_sbp)
-			# 	model_sbp = LinearRegression()
-			# 	model_sbp.fit(x_poly_sbp, y_train_sbp)
-			# 	y_poly_pred = model_sbp.predict(polynomial_features.fit_transform(X_test_sbp))
-			# 	MAE_sbp = round(mean_absolute_error(y_test_sbp, y_poly_pred),2)
-			# 	maes_sbp.append(MAE_sbp)
-			# 	axs[2].plot(y_test_sbp.index,y_poly_pred,label=f'Polynomial, deg:{order}')
-
-			# ====================================================================================
-			# #grid search SVR
-			# parameters = {'kernel':('linear', 'rbf'), 'epsilon':np.linspace(.1,5,5), 'C':np.linspace(.1,1000,10)}
-			# svr = SVR()
-			# clf = GridSearchCV(svr, parameters)
-			# clf.fit(X_train_dbp, y_train_dbp)
-			# y_hat_dbp = clf.predict(X_test_dbp)
-			# axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'SVR: Best')
-			# print(f'Best for DBP: {clf.best_params_}')
-			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-			# maes_dbp.append(MAE_dbp)
-			# clf = GridSearchCV(svr, parameters)
-			# clf.fit(X_train_sbp, y_train_sbp)
-			# print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
-			# y_hat_sbp = clf.predict(X_test_sbp)
-			# print(f'Best for SBP: {clf.best_params_}')
-			# axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'SVR: Best')
-			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-			# maes_sbp.append(MAE_sbp)
-
-
-			#====================================================================================
-			# #Grid search for Ridge
-			# params = {'alpha':np.linspace(.01,1000,100)}
-			# y_hat_dbp = self.GS_regression(Ridge(),params,y_train_dbp,X_train_dbp,X_test_dbp)
-			# axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
-			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-			# maes_dbp.append(MAE_dbp)
-			# y_hat_sbp = self.GS_regression(Ridge(),params,y_train_sbp,X_train_sbp,X_test_sbp)
-			# axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
-			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-			# maes_sbp.append(MAE_sbp)
-			# x_labs.append('Ridge Optimized')
 			
 			#====================================================================================
 			#Random Forrest
@@ -586,8 +533,8 @@ class SintecProj(object):
 				MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
 				count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'RF-SBP'))
 				maes_sbp.append(MAE_sbp)
-
-			# # Linear regression
+			#====================================================================================
+			# Linear regression
 			w_dbp = (np.linalg.inv(X_train_dbp.values.T@X_train_dbp.values))@(X_train_dbp.values.T@y_train_dbp.values)
 			y_hat_dbp = X_test_dbp.values@w_dbp
 			axs[2].plot(y_test_dbp.index,y_hat_dbp,label='Linear')
@@ -604,23 +551,6 @@ class SintecProj(object):
 			count_sbp.append(self.count_diff(y_test_sbp, y_hat_sbp, 'Lin-SBP'))
 			x_labs.append(f'Linear')
 			
-			#Grid search for RF
-			# params = {
-			# 	# 'bootstrap': [True],
-			# 	'max_depth': [80, 90, 100, 110],
-			# 	# 'max_features': [2, 3],
-			# 	# 'min_samples_leaf': [3, 4, 5],
-			# 	# 'min_samples_split': [8, 10, 12],
-			# 	'n_estimators': [100, 200, 300, 1000]} 
-			# y_hat_dbp = self.GS_regression(RandomForestRegressor(criterion='mae'),params,y_train_dbp,X_train_dbp,X_test_dbp)
-			# axs[1].plot(y_test_dbp.index,y_hat_dbp,label=f'Grid Search')
-			# MAE_dbp = round(mean_absolute_error(y_test_dbp, y_hat_dbp),2)
-			# maes_dbp.append(MAE_dbp)
-			# y_hat_sbp = self.GS_regression(RandomForestRegressor(criterion='mae'),params,y_train_sbp,X_train_sbp,X_test_sbp)
-			# axs[2].plot(y_test_sbp.index,y_hat_sbp,label=f'Grid Search')
-			# MAE_sbp = round(mean_absolute_error(y_test_sbp, y_hat_sbp),2)
-			# maes_sbp.append(MAE_sbp)
-			# x_labs.append('RF Optimized')
 			#====================================================================================
 			axs[0].set_title(f'Prediction vs. Test for patient {patient}')
 			
@@ -654,10 +584,7 @@ class SintecProj(object):
 					ax.label_outer()
 				except:
 					pass
-			# plt.title(f'Alpha = {alpha}')
-			# ax = df.plot(style='o-')
-			# df_interpolated.plot(ax=ax)
-			# plt.legend()
+			
 			print(df)
 			plt.tight_layout()
 			self.create_path('Plots\\Regression')
@@ -670,7 +597,7 @@ class SintecProj(object):
 					final_dict_sbp[patient].update({f'{lab} > {thresh}':err_sbp[cnt]})
 					final_dict_dbp[patient].update({f'{lab} > {thresh}':err_dbp[cnt]})
 			# plt.show()
-			# break
+			
 		pd.DataFrame(final_dict_sbp).to_excel(f'{self.dataset_path}\\sbp_thresh_errors.xlsx')
 		pd.DataFrame(final_dict_dbp).to_excel(f'{self.dataset_path}\\dbp_thresh_errors.xlsx')
 		dbp_errors.index = x_labs 
